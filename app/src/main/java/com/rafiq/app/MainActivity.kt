@@ -244,6 +244,8 @@ object TashkeelAndMakhrajChecker {
             "تأخذهم" to "خطأ في الكلمة (الضمير): نطقتَ «تأخذهم» والصواب «تَأْخُذُهُ».",
             "تأخذهما" to "خطأ في الكلمة (الضمير): نطقتَ «تأخذهما» والصواب «تَأْخُذُهُ».",
             "تاخذهما" to "خطأ في الكلمة (الضمير): نطقتَ «تأخذهما» والصواب «تَأْخُذُهُ».",
+            "تأخذ" to "خطأ في الكلمة: أسقطتَ هاء الضمير من «تَأْخُذُهُ».",
+            "تاخذ" to "خطأ في الكلمة: أسقطتَ هاء الضمير من «تَأْخُذُهُ».",
             "تأخذهَ" to "خطأ في التشكيل: فتحتَ الهاء في «تَأْخُذُهُ» والصواب ضمّها مع صلة صغرى وصلاً.",
             "تأخذهِ" to "خطأ في التشكيل: كسرتَ الهاء في «تَأْخُذُهُ» والصواب ضمّها.",
             "ياخذه" to "خطأ في الحروف: أبدلتَ التاء ياءً («يأخذه») والصواب بالتاء «تَأْخُذُهُ».",
@@ -377,8 +379,7 @@ object TashkeelAndMakhrajChecker {
         28 to mapOf(
             "بينا" to "خطأ في المد: أشبعتَ فتحة النون ألفاً في «بَيْنَ» والصواب قصرها دون مدّ.",
             "بينُ" to "خطأ في التشكيل (الإعراب): ضممتَ النون في «بَيْنَ» والصواب فتحها «بَيْنَ».",
-            "بينِ" to "خطأ في التشكيل (الإعراب): كسرتَ النون في «بَيْنَ» والصواب فتحها «بَيْنَ».",
-            "ما بين" to "صحيح"
+            "بينِ" to "خطأ في التشكيل (الإعراب): كسرتَ النون في «بَيْنَ» والصواب فتحها «بَيْنَ»."
         ),
         29 to mapOf(
             "إيديهم" to "خطأ في التشكيل (الهمزة): كسرتَ همزة «أَيْدِيهِمْ» والصواب فتحها «أَيْدِيهِمْ».",
@@ -389,7 +390,9 @@ object TashkeelAndMakhrajChecker {
             "أيديهما" to "خطأ في الكلمة: نطقتَ «أيديهما» والصواب «أَيْدِيهِمْ».",
             "ايديهما" to "خطأ في الكلمة: نطقتَ «أيديهما» والصواب «أَيْدِيهِمْ».",
             "أيدينا" to "خطأ في الكلمة: نطقتَ «أيدينا» والصواب «أَيْدِيهِمْ».",
-            "ايدينا" to "خطأ في الكلمة: نطقتَ «أيدينا» والصواب «أَيْدِيهِمْ»."
+            "ايدينا" to "خطأ في الكلمة: نطقتَ «أيدينا» والصواب «أَيْدِيهِمْ».",
+            "ايديه" to "خطأ في الكلمة: أسقطتَ الميم من «أَيْدِيهِمْ».",
+            "أيديه" to "خطأ في الكلمة: أسقطتَ الميم من «أَيْدِيهِمْ»."
         ),
         31 to mapOf(
             "خلفكم" to "خطأ في الكلمة: نطقتَ بالكاف («خلفكم») والصواب بالهاء «خَلْفَهُمْ».",
@@ -436,7 +439,8 @@ object TashkeelAndMakhrajChecker {
             "علمهم" to "خطأ في الكلمة: نطقتَ «علمهم» والصواب «عِلْمِهِ».",
             "علمكم" to "خطأ في الكلمة: نطقتَ «علمكم» والصواب «عِلْمِهِ».",
             "علمنا" to "خطأ في الكلمة: نطقتَ «علمنا» والصواب «عِلْمِهِ».",
-            "علمك" to "خطأ في الكلمة: نطقتَ «علمك» والصواب «عِلْمِهِ»."
+            "علمك" to "خطأ في الكلمة: نطقتَ «علمك» والصواب «عِلْمِهِ».",
+            "علم" to "خطأ في الكلمة: أسقطتَ هاء الضمير من «عِلْمِهِ»."
         ),
         37 to mapOf(
             "ألا" to "خطأ في التشكيل (الهمزة): فتحتَ همزة «إِلَّا» والصواب كسرها «إِلَّا»."
@@ -470,6 +474,7 @@ object TashkeelAndMakhrajChecker {
             "كرسيهِ" to "خطأ في التشكيل: كسرتَ الهاء في «كُرْسِيُّهُ» والصواب ضمّها.",
             "كرسيهم" to "خطأ في الكلمة: نطقتَ «كرسيهم» والصواب «كُرْسِيُّهُ».",
             "كرسيهما" to "خطأ في الكلمة: نطقتَ «كرسيهما» والصواب «كُرْسِيُّهُ».",
+            "كرسي" to "خطأ في الكلمة: أسقطتَ هاء الضمير من «كُرْسِيُّهُ».",
             "قرصيه" to "خطأ في مخارج الحروف: فخّمتَ الكاف والسين في «كُرْسِيُّهُ» وحقهما الترقيق."
         ),
         42 to mapOf(
@@ -539,7 +544,6 @@ object TashkeelAndMakhrajChecker {
         )
     )
 
-    /** يفحص ما إذا كانت الكلمة المسموعة في البدائل الصوتية كلمة قريبة (جذر مشترك/وزن قريب) صححها النموذج اللغوي في الفرضية الأولى. */
     fun isCloseWordNeighbor(heardNorm: String, expectedNorm: String): Boolean {
         val h = heardNorm.trim()
         val e = expectedNorm.trim()
@@ -727,7 +731,7 @@ object TashkeelAndMakhrajChecker {
                 if (mc in listOf('ا', 'و', 'ي')) {
                     msgs.add("خطأ في التجويد (المدّ) أو بنية الكلمة: إسقاط أو قصر حرف المدّ «$mc».")
                 } else {
-                    msgs.add("خطأ في الحروف: إسقاط حرف «$mc» من الكلمة.")
+                    msgs.add("خطأ في الحروف أو بنية الكلمة: إسقاط حرف «$mc» من الكلمة.")
                 }
             }
         } else {
@@ -947,10 +951,13 @@ object Aligner {
             }
 
             if (wi < last) {
-                // بمجرد انتقال القارئ إلى الكلمة التالية (wi < last)، نحسم حالة الكلمة wi فوراً قبل أن يغيرها النموذج اللغوي!
+                // إذا انتقل القارئ إلى الكلمة التالية وكانت الكلمة wi ناقصة (مثل قول «حفظهم» بدل «حفظهما» أو «يحيط» بدل «يحيطون»)،
+                // نحسب الحروف الناقصة من آخر wi خطأً فوراً!
+                val missingTail = if (heard[wi].length < NW[wi].length) (NW[wi].length - heard[wi].length).toFloat() else 0f
+                val totalWordCost = cost[wi] + missingTail
                 val nextCharsMatched = endCol - W_START[wi + 1]
                 val nextConfirmed = nextCharsMatched >= min(2, NW[wi + 1].length)
-                if (cost[wi] <= 1e-4f) {
+                if (totalWordCost <= 1e-4f) {
                     st[wi] = WS.OK
                 } else if (trapHit[wi] || subOrInsCost[wi] >= 1f || nextConfirmed || isFinal || (last - wi >= 2)) {
                     st[wi] = WS.WRONG
@@ -968,7 +975,7 @@ object Aligner {
                     }
                 }
             } else {
-                if (trapHit[wi] && isFinal) {
+                if (trapHit[wi]) {
                     st[wi] = WS.WRONG
                 }
             }
@@ -991,7 +998,6 @@ class Engine(private val ctx: Context) {
     val heard = Array(WORDS.size) { "" }
     val notes = Array(WORDS.size) { "" }
 
-    // قفل دائم لأي كلمة ثبت خطؤها (سواء كلمة قريبة أو تشكيل أو تجويد أو حرف) لمنع النموذج اللغوي من مسح الخطأ لاحقاً!
     private val lockedWrongNotes = Array(WORDS.size) { "" }
     private val lockedWrongHeard = Array(WORDS.size) { "" }
     private val lastWordWrongStreak = IntArray(WORDS.size)
@@ -1005,7 +1011,6 @@ class Engine(private val ctx: Context) {
     private var lastR: AlignResult? = null
     private var stopping = false
     private var lastActivity = 0L
-    private var sessionSpeechRecognized = false
     private val beeped = BooleanArray(WORDS.size)
     private val tone: ToneGenerator? = try {
         ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70)
@@ -1030,14 +1035,13 @@ class Engine(private val ctx: Context) {
         lastR = null
         current = 0
         lastActivity = SystemClock.elapsedRealtime()
-        LiveAcousticTracker.resetAttempt()
+        RmsProsodyMonitor.reset()
     }
 
     fun goGuided() {
         stopRec(); stopAudio(); h.removeCallbacksAndMessages(null)
         resetAttempt(); phase = Phase.GUIDED
         status = "اقرأ الآية بصوتك… (التوهج الذهبي يتابعك كلمة بكلمة تلقائياً)"
-        LiveAcousticTracker.startCaptureIfSupported()
         startRec()
     }
 
@@ -1045,7 +1049,6 @@ class Engine(private val ctx: Context) {
         stopRec(); stopAudio(); h.removeCallbacksAndMessages(null)
         resetAttempt(); phase = Phase.RECITE
         status = "سَمِّع الآية غيباً… (الرصد تلقائي مع التوهج المتحرك)"
-        LiveAcousticTracker.startCaptureIfSupported()
         startRec()
         tick()
     }
@@ -1054,15 +1057,12 @@ class Engine(private val ctx: Context) {
         stopRec(); stopAudio(); h.removeCallbacksAndMessages(null)
         resetAttempt()
         status = "اقرأ الآية بصوتك…"
-        if (phase == Phase.GUIDED || phase == Phase.RECITE) {
-            LiveAcousticTracker.startCaptureIfSupported()
-            startRec()
-        }
+        if (phase == Phase.GUIDED || phase == Phase.RECITE) startRec()
         if (phase == Phase.RECITE) tick()
     }
 
     fun finish() {
-        stopRec(); LiveAcousticTracker.stopCapture(); h.removeCallbacksAndMessages(null)
+        stopRec(); h.removeCallbacksAndMessages(null)
         for (i in states.indices) if (states[i] == WS.PENDING) states[i] = WS.WRONG
         current = WORDS.size
         phase = Phase.RESULT
@@ -1117,32 +1117,26 @@ class Engine(private val ctx: Context) {
         sBase = base
         lastR = null
         stopping = false
-        sessionSpeechRecognized = false
-        LiveAcousticTracker.resetSessionFrames()
         val r = SpeechRecognizer.createSpeechRecognizer(ctx)
         rec = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(p: Bundle?) {}
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(v: Float) {
-                LiveAcousticTracker.onRecognizerRmsChanged(v, current)
+                RmsProsodyMonitor.onRmsChanged(v, current)
             }
             override fun onBufferReceived(b: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onEvent(t: Int, b: Bundle?) {}
             override fun onError(e: Int) {
                 if (id != session) return
-                // إذا تعارض AudioRecord مع SpeechRecognizer على بعض الهواتف، نوقف AudioRecord فوراً ليعمل التوهج بسلاسة
-                if (!sessionSpeechRecognized && (e == SpeechRecognizer.ERROR_AUDIO || e == SpeechRecognizer.ERROR_CLIENT)) {
-                    LiveAcousticTracker.disableConcurrentAndStop()
-                }
                 lastR?.let { commit(it) }
                 if (id != session) return
                 if (e == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
                     status = "صلاحية الميكروفون غير ممنوحة"
                     return
                 }
-                val wait = if (e == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || e == SpeechRecognizer.ERROR_CLIENT) 350L else 60L
+                val wait = if (e == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || e == SpeechRecognizer.ERROR_CLIENT) 400L else 80L
                 restart(id, wait)
             }
             override fun onResults(b: Bundle?) {
@@ -1156,15 +1150,16 @@ class Engine(private val ctx: Context) {
                 candidates(b)?.let { onHyp(it, false) }
             }
         })
+        // إعدادات SpeechRecognizer الأصلية المجرَّبة التي تضمن تحرك التوهج بسلاسة تامة وبدون انقطاع
         r.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 10)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName)
-            // تقصير نافذة الجلسة لكسر السياق الطويل ومنع النموذج اللغوي من إكمال آية الكرسي تلقائياً!
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 20000L)
         })
     }
 
@@ -1175,15 +1170,37 @@ class Engine(private val ctx: Context) {
         }
     }
 
+    /**
+     * يستخرج الفرضيات من كلٍّ من RESULTS_RECOGNITION و UNSTABLE_TEXT:
+     * - UNSTABLE_TEXT يحتوي على الكلمة الصوتية الخام التي ينطقها المستخدم في نفس اللحظة قبل أن يصححها النموذج اللغوي لـ Google!
+     * - هذا يجعل التوهج الذهبي يتحرك فوراً من أول كلمة («اللَّهُ») ويلتقط الكلمات المتقاربة وأخطاء التشكيل قبل تبييضها!
+     */
     private fun candidates(b: Bundle?): List<String>? {
-        val l = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: return null
-        val out = l.filter { norm(it).isNotEmpty() }
+        if (b == null) return null
+        val stable = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+        val unstable = b.getStringArrayList("android.speech.extra.UNSTABLE_TEXT")
+        val ut = unstable?.firstOrNull()?.trim() ?: ""
+        val out = ArrayList<String>()
+        if (stable != null && stable.isNotEmpty()) {
+            val st0 = stable[0].trim()
+            if (ut.isNotEmpty()) {
+                val combined = "$st0 $ut".trim()
+                if (norm(combined).isNotEmpty()) out.add(combined)
+            }
+            for (s in stable) {
+                val trimmed = s.trim()
+                if (norm(trimmed).isNotEmpty() && !out.contains(trimmed)) {
+                    out.add(trimmed)
+                }
+            }
+        } else if (ut.isNotEmpty() && norm(ut).isNotEmpty()) {
+            out.add(ut)
+        }
         return if (out.isEmpty()) null else out
     }
 
     private fun onHyp(raw: List<String>, isFinal: Boolean) {
         if (phase != Phase.GUIDED && phase != Phase.RECITE) return
-        sessionSpeechRecognized = true
         val primary = Aligner.align(raw[0], sBase, isFinal)
         val r = primary ?: raw.drop(1).firstNotNullOfOrNull { Aligner.align(it, sBase, isFinal) }
         if (r == null) {
@@ -1191,15 +1208,15 @@ class Engine(private val ctx: Context) {
             return
         }
 
-        // 1. فحص جميع الفرضيات البديلة (N-Best Acoustic Beams 1..9) لكشف:
-        //    أ) أي خطأ في قاموس التشكيل/التنوين/المخارج/الكلمات المتقاربة (trapHit)
-        //    ب) أي كلمة قريبة (isCloseWordNeighbor) اتفقت عليها الفرضيات الصوتية وصححها النموذج اللغوي في raw[0]
+        // 1. فحص جميع الفرضيات البديلة (N-Best Acoustic Beams) لرصد:
+        //    أ) أي مصيدة تشكيل أو تنوين أو كلمة قريبة في WORD_TRAPS
+        //    ب) أي كلمة قريبة (isCloseWordNeighbor) ظهرت في البدائل الصوتية بينما صححها النموذج اللغوي في raw[0]
         val altResults = ArrayList<AlignResult>()
         val altLimit = min(raw.size, 8)
         for (k in 1 until altLimit) {
             val altR = Aligner.align(raw[k], sBase, isFinal) ?: continue
             altResults.add(altR)
-            val maxW = min(WORDS.size, altR.last + (if (isFinal) 1 else 0))
+            val maxW = min(WORDS.size, altR.last + 1)
             for (wi in sBase until maxW) {
                 if (altR.trapHit[wi] && lockedWrongNotes[wi].isEmpty()) {
                     lockedWrongNotes[wi] = altR.notes[wi]
@@ -1208,58 +1225,57 @@ class Engine(private val ctx: Context) {
             }
         }
 
-        // فحص اتفاق الفرضيات الصوتية البديلة على كلمة قريبة عندما يقوم النموذج اللغوي في raw[0] بتصحيحها تلقائياً
         val completedLimit = min(WORDS.size, r.last + (if (isFinal) 1 else 0))
         for (wi in maxOf(sBase, r.first) until completedLimit) {
             if (lockedWrongNotes[wi].isNotEmpty()) continue
-            if (r.st[wi] == WS.OK && altResults.size >= 2) {
-                val a1 = altResults[0]
-                val a2 = altResults[1]
-                if (wi <= a1.last && wi <= a2.last &&
-                    a1.subOrInsCost[wi] >= 1f && a2.subOrInsCost[wi] >= 1f &&
-                    a1.heard[wi].isNotEmpty() && a1.heard[wi] == a2.heard[wi] &&
-                    TashkeelAndMakhrajChecker.isCloseWordNeighbor(a1.heard[wi], NW[wi])
-                ) {
-                    val diag = TashkeelAndMakhrajChecker.diagnoseOrthographicError(wi, NW[wi], a1.heard[wi])
-                    lockedWrongNotes[wi] = diag
-                    lockedWrongHeard[wi] = a1.heard[wi]
+            if (r.st[wi] == WS.OK && altResults.isNotEmpty()) {
+                for (aR in altResults) {
+                    if (wi < aR.last && aR.subOrInsCost[wi] >= 1f && aR.heard[wi].isNotEmpty() &&
+                        TashkeelAndMakhrajChecker.isCloseWordNeighbor(aR.heard[wi], NW[wi])
+                    ) {
+                        val diag = if (aR.notes[wi].isNotEmpty()) aR.notes[wi]
+                        else TashkeelAndMakhrajChecker.diagnoseOrthographicError(wi, NW[wi], aR.heard[wi])
+                        lockedWrongNotes[wi] = diag
+                        lockedWrongHeard[wi] = aR.heard[wi]
+                        break
+                    }
                 }
             }
         }
 
-        // 2. الفحص الصوتي الترددي والزمني اللحظي (Double-Guard Formant Z1/Z2 + Madd + Ghunnah) للكلمات المكتملة
-        val lastCompletedWord = if (isFinal) r.last else (r.last - 1)
-        if (lastCompletedWord >= r.first) {
-            val acousticErrors = LiveAcousticTracker.auditCompletedSessionWords(
-                maxOf(sBase, r.first),
-                min(WORDS.size - 1, lastCompletedWord),
-                isFinal
-            )
-            for ((wi, acNote) in acousticErrors) {
-                if (wi in sBase until WORDS.size && lockedWrongNotes[wi].isEmpty()) {
-                    lockedWrongNotes[wi] = acNote
+        // 2. فحص أزمنة المد الواجب المتصل والغنة عبر RmsProsodyMonitor (بدون AudioRecord) للكلمات المكتملة
+        for (wi in maxOf(sBase, r.first) until r.last) {
+            if (wi in sBase until WORDS.size && lockedWrongNotes[wi].isEmpty()) {
+                val timingErr = RmsProsodyMonitor.checkCompletedWordTajweedTiming(wi, isWaqf = false)
+                if (timingErr != null) {
+                    lockedWrongNotes[wi] = timingErr
                     if (lockedWrongHeard[wi].isEmpty()) lockedWrongHeard[wi] = r.heard[wi]
                 }
             }
         }
 
-        // 3. معالجة الكلمة الحالية (r.last) إذا نطق المستخدم كلمة قريبة/خاطئة كاملة وتوقف عندها
+        // 3. إذا نطق القارئ في الموضع الحالي (r.last) كلمة ليست بداية للكلمة الصحيحة (كلمة قريبة أو حرف مختلف)، نحسمها فوراً!
         val lastW = r.last
         if (lastW in sBase until WORDS.size && lockedWrongNotes[lastW].isEmpty()) {
-            if (r.subOrInsCost[lastW] >= 1f && r.heard[lastW].length >= NW[lastW].length) {
+            val hLast = r.heard[lastW]
+            val isNotPrefix = hLast.length >= max(2, NW[lastW].length - 1) && !NW[lastW].startsWith(hLast)
+            if (r.trapHit[lastW]) {
+                lockedWrongNotes[lastW] = r.notes[lastW]
+                lockedWrongHeard[lastW] = hLast
+            } else if (isNotPrefix && r.subOrInsCost[lastW] >= 1f) {
                 lastWordWrongStreak[lastW]++
                 if (lastWordWrongStreak[lastW] >= 2) {
                     val diag = if (r.notes[lastW].isNotEmpty()) r.notes[lastW]
-                    else TashkeelAndMakhrajChecker.diagnoseOrthographicError(lastW, NW[lastW], r.heard[lastW])
+                    else TashkeelAndMakhrajChecker.diagnoseOrthographicError(lastW, NW[lastW], hLast)
                     lockedWrongNotes[lastW] = diag
-                    lockedWrongHeard[lastW] = r.heard[lastW]
+                    lockedWrongHeard[lastW] = hLast
                 }
             } else {
                 lastWordWrongStreak[lastW] = 0
             }
         }
 
-        // 4. تحديث الحالات وقفل أي كلمة مكتملة ثبت خطؤها فوراً حتى لا يمسحها النموذج اللغوي لاحقاً
+        // 4. تحديث حالات الكلمات وقفل أي كلمة مكتملة ثبت خطؤها فوراً
         var beep = false
         for (i in sBase until WORDS.size) {
             if (states[i] == WS.HINT) continue
@@ -1289,7 +1305,6 @@ class Engine(private val ctx: Context) {
             }
         }
 
-        // تقديم base تلقائياً للكلمات المحسومة حتى يتقدم التوهج الذهبي فوراً ولا يعيد المعرِّف كتابة الكلمات السابقة
         var decidedPrefix = sBase
         while (decidedPrefix < WORDS.size && states[decidedPrefix] != WS.PENDING) {
             decidedPrefix++
@@ -1319,7 +1334,6 @@ class Engine(private val ctx: Context) {
 
     private fun attemptDone() {
         stopRec()
-        LiveAcousticTracker.stopCapture()
         val bad = states.count { it == WS.WRONG }
         val my = session
         if (bad <= GUIDED_TOLERANCE) {
@@ -1342,23 +1356,22 @@ class Engine(private val ctx: Context) {
             if (my == session && phase == Phase.GUIDED) {
                 resetAttempt()
                 status = "اقرأ الآية بصوتك…"
-                LiveAcousticTracker.startCaptureIfSupported()
                 startRec()
             }
         }, ms)
     }
 
     fun toggleAudio() {
-        if (playing) { stopAudio(); if (phase == Phase.GUIDED) { LiveAcousticTracker.startCaptureIfSupported(); startRec() }; return }
-        stopRec(); LiveAcousticTracker.stopCapture(); playing = true
+        if (playing) { stopAudio(); if (phase == Phase.GUIDED) startRec(); return }
+        stopRec(); playing = true
         player = MediaPlayer().apply {
             setAudioAttributes(AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
             setDataSource(AUDIO_URL)
             setOnPreparedListener { it.start() }
-            setOnCompletionListener { stopAudio(); if (phase == Phase.GUIDED) { LiveAcousticTracker.startCaptureIfSupported(); startRec() } }
+            setOnCompletionListener { stopAudio(); if (phase == Phase.GUIDED) startRec() }
             setOnErrorListener { _, _, _ ->
                 stopAudio(); status = "تعذّر تشغيل الصوت (تحقق من الإنترنت)"
-                if (phase == Phase.GUIDED) { LiveAcousticTracker.startCaptureIfSupported(); startRec() }
+                if (phase == Phase.GUIDED) startRec()
                 true
             }
             prepareAsync()
@@ -1367,7 +1380,7 @@ class Engine(private val ctx: Context) {
 
     private fun stopAudio() { player?.release(); player = null; playing = false }
     private fun stopRec() { session++; rec?.destroy(); rec = null }
-    fun release() { h.removeCallbacksAndMessages(null); stopRec(); LiveAcousticTracker.stopCapture(); stopAudio(); tone?.release() }
+    fun release() { h.removeCallbacksAndMessages(null); stopRec(); stopAudio(); tone?.release() }
 }
 
 val Bg = Color(0xFF0F2B2A); val CardC = Color(0xFF173E3B); val Gold = Color(0xFFD4AF37)
