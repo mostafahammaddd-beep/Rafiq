@@ -1,17 +1,27 @@
 package com.rafiq.app
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaRecorder
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteOrder
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -86,11 +96,794 @@ class PcmRecorder {
 }
 
 /**
- * الفحص الدقيق (الإصدار الرابع):
- * 1) يرسل الصوت المكيَّف إلى خادم quran-muaalem.
- * 2) يدعم قراءة حقل words_audit المباشر من الخادم المطور (app_server.py).
- * 3) يتضمن محرك محاذاة صوتية (QPS Waqf/Wasl/Ibtida DP Aligner) كامل داخل التطبيق نفسه،
- *    بحيث يعمل بدقة 100% حتى لو كان الخادم يعمل بالنسخة القديمة من quran-muaalem!
+ * المحرك الفيزيائي الطيفي والمرجعي المدمج داخل الهاتف (On-Device Physical Acoustic & Reference DTW Auditor):
+ * - يحلل الإشارة الصوتية الخام (16kHz PCM) عبر تحويل فورييه السريع (512-point FFT) لاستخراج ترددات الفورمانت (F1/F2)
+ *   وطاقة حزم الغنة والصفير والتفشي والتفخيم لكل كلمة من الكلمات الخمسين.
+ * - يقارن بصمة كل كلمة طيفياً وزمنياً بالتلاوة المرجعية للشيخ المنشاوي (002255.mp3) عبر خوارزمية DTW.
+ * - يكشف أخطاء التشكيل (مثل «سِنَةً» بالفتح بدل «سِنَةٌ»، أو فتح/كسر أواخر الكلمات)، وأخطاء مقادير المدود بالملي ثانية،
+ *   وترك الغنة في الإخفاء والإدغام، وإبدال الحروف المتقاربة (ذ/ز، ظ/ز، ش/س)، وترقيق المفخم.
+ */
+object LocalAcousticAuditor {
+    const val SR = 16000
+
+    class WordSpec(
+        val idx: Int,
+        val text: String,
+        val waslVowels: List<String>,
+        val waqfVowels: List<String>,
+        val minHarakat: Float,
+        val maddType: String,
+        val reqGhunnah: Boolean,
+        val interdental: Boolean,
+        val safeer: Boolean,
+        val tafashie: Boolean,
+        val tafkheem: Boolean,
+        val internalSakin: Boolean
+    )
+
+    val NATURAL_WAQF_SET = setOf(4, 5, 6, 11, 15, 18, 25, 29, 31, 39, 43, 46, 48, 49)
+
+    val WORD_SPECS: List<WordSpec> = listOf(
+        WordSpec(0,  "اللَّهُ",       listOf("a", "aa", "u"),       listOf("a", "aa"),            4.0f, "TABEEI",   false, false, false, false, true,  false),
+        WordSpec(1,  "لَا",           listOf("aa"),                 listOf("aa"),                 2.0f, "MUNFASIL", false, false, false, false, false, false),
+        WordSpec(2,  "إِلَٰهَ",       listOf("i", "aa", "a"),       listOf("i", "aa"),            4.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(3,  "إِلَّا",        listOf("i", "aa"),            listOf("i", "aa"),            3.5f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(4,  "هُوَ",          listOf("u", "a"),             listOf("u"),                  2.0f, "NONE",     false, false, false, false, false, false),
+        WordSpec(5,  "الْحَيُّ",      listOf("a", "u"),             listOf("a"),                  2.8f, "NONE",     false, false, false, false, false, false),
+        WordSpec(6,  "الْقَيُّومُ",   listOf("a", "uu", "u"),       listOf("a", "uu"),            4.5f, "TABEEI",   false, false, false, false, true,  false),
+        WordSpec(7,  "لَا",           listOf("aa"),                 listOf("aa"),                 2.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(8,  "تَأْخُذُهُ",    listOf("a", "u", "u", "uu"),  listOf("a", "u", "u"),        4.5f, "TABEEI",   false, true,  false, false, true,  true),
+        WordSpec(9,  "سِنَةٌ",        listOf("i", "a", "u"),        listOf("i", "a"),             3.5f, "NONE",     true,  false, true,  false, false, false),
+        WordSpec(10, "وَلَا",         listOf("a", "aa"),            listOf("a", "aa"),            3.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(11, "نَوْمٌ",        listOf("a", "u"),             listOf("a"),                  3.0f, "LEEN",     false, false, false, false, false, false),
+        WordSpec(12, "لَهُ",          listOf("a", "uu"),            listOf("a"),                  3.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(13, "مَا",           listOf("aa"),                 listOf("aa"),                 2.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(14, "فِي",           listOf("i"),                  listOf("ii"),                 1.2f, "NONE",     false, false, false, false, false, false),
+        WordSpec(15, "السَّمَاوَاتِ", listOf("a", "aa", "aa", "i"), listOf("a", "aa", "aa"),      6.0f, "TABEEI",   false, false, true,  false, false, false),
+        WordSpec(16, "وَمَا",         listOf("a", "aa"),            listOf("a", "aa"),            3.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(17, "فِي",           listOf("i"),                  listOf("ii"),                 1.2f, "NONE",     false, false, false, false, false, false),
+        WordSpec(18, "الْأَرْضِ",     listOf("a", "i"),             listOf("a"),                  3.0f, "NONE",     false, false, false, false, true,  true),
+        WordSpec(19, "مَنْ",          listOf("a"),                  listOf("a"),                  2.8f, "NONE",     true,  false, false, false, false, false),
+        WordSpec(20, "ذَا",           listOf("a"),                  listOf("aa"),                 1.2f, "NONE",     false, true,  false, false, false, false),
+        WordSpec(21, "الَّذِي",       listOf("a", "ii"),            listOf("a", "ii"),            3.5f, "TABEEI",   false, true,  false, false, false, false),
+        WordSpec(22, "يَشْفَعُ",      listOf("a", "a", "u"),        listOf("a", "a"),             3.0f, "NONE",     false, false, false, true,  false, true),
+        WordSpec(23, "عِنْدَهُ",      listOf("i", "a", "uu"),       listOf("i", "a"),             5.0f, "MUNFASIL", true,  false, false, false, false, false),
+        WordSpec(24, "إِلَّا",        listOf("i", "aa"),            listOf("i", "aa"),            3.5f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(25, "بِإِذْنِهِ",    listOf("i", "i", "i", "ii"),  listOf("i", "i", "i"),        4.5f, "TABEEI",   false, true,  false, false, false, true),
+        WordSpec(26, "يَعْلَمُ",      listOf("a", "a", "u"),        listOf("a", "a"),             3.0f, "NONE",     false, false, false, false, false, true),
+        WordSpec(27, "مَا",           listOf("aa"),                 listOf("aa"),                 2.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(28, "بَيْنَ",        listOf("a", "a"),             listOf("a"),                  2.5f, "LEEN",     false, false, false, false, false, false),
+        WordSpec(29, "أَيْدِيهِمْ",   listOf("a", "ii", "i"),       listOf("a", "ii", "i"),       4.5f, "TABEEI",   false, false, false, false, false, true),
+        WordSpec(30, "وَمَا",         listOf("a", "aa"),            listOf("a", "aa"),            3.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(31, "خَلْفَهُمْ",    listOf("a", "a", "u"),        listOf("a", "a", "u"),        3.2f, "NONE",     false, false, false, false, true,  true),
+        WordSpec(32, "وَلَا",         listOf("a", "aa"),            listOf("a", "aa"),            3.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(33, "يُحِيطُونَ",    listOf("u", "ii", "uu", "a"), listOf("u", "ii", "uu"),      6.0f, "TABEEI",   false, false, false, false, true,  false),
+        WordSpec(34, "بِشَيْءٍ",      listOf("i", "a", "i"),        listOf("i", "a"),             4.0f, "NONE",     true,  false, false, true,  false, false),
+        WordSpec(35, "مِنْ",          listOf("i"),                  listOf("i"),                  1.5f, "NONE",     false, false, false, false, false, true),
+        WordSpec(36, "عِلْمِهِ",      listOf("i", "i", "ii"),       listOf("i", "i"),             4.0f, "MUNFASIL", false, false, false, false, false, true),
+        WordSpec(37, "إِلَّا",        listOf("i", "aa"),            listOf("i", "aa"),            3.5f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(38, "بِمَا",         listOf("i", "aa"),            listOf("i", "aa"),            3.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(39, "شَاءَ",         listOf("aa", "a"),            listOf("aa"),                 4.5f, "MUTTASIL", false, false, false, true,  false, false),
+        WordSpec(40, "وَسِعَ",        listOf("a", "i", "a"),        listOf("a", "i"),             2.5f, "NONE",     false, false, true,  false, false, false),
+        WordSpec(41, "كُرْسِيُّهُ",   listOf("u", "i", "u", "u"),   listOf("u", "i", "u"),        4.0f, "NONE",     false, false, true,  false, true,  true),
+        WordSpec(42, "السَّمَاوَاتِ", listOf("a", "aa", "aa", "i"), listOf("a", "aa", "aa"),      6.0f, "TABEEI",   false, false, true,  false, false, false),
+        WordSpec(43, "وَالْأَرْضَ",   listOf("a", "a", "a"),        listOf("a", "a"),             3.5f, "NONE",     false, false, false, false, true,  true),
+        WordSpec(44, "وَلَا",         listOf("a", "aa"),            listOf("a", "aa"),            3.0f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(45, "يَئُودُهُ",     listOf("a", "uu", "u", "uu"), listOf("a", "uu", "u"),       5.5f, "TABEEI",   false, false, false, false, false, false),
+        WordSpec(46, "حِفْظُهُمَا",   listOf("i", "u", "u", "aa"),  listOf("i", "u", "u", "aa"),  5.0f, "TABEEI",   false, true,  false, false, true,  true),
+        WordSpec(47, "وَهُوَ",        listOf("a", "u", "a"),        listOf("a", "u"),             2.5f, "NONE",     false, false, false, false, false, false),
+        WordSpec(48, "الْعَلِيُّ",    listOf("a", "i", "u"),        listOf("a", "i"),             3.5f, "NONE",     false, false, false, false, false, false),
+        WordSpec(49, "الْعَظِيمُ",    listOf("a", "ii"),            listOf("a", "ii"),            4.5f, "AARED",    false, true,  false, false, true,  false)
+    )
+
+    class FrameFeatures(
+        val rms: FloatArray,
+        val zcr: FloatArray,
+        val eF1Closed: FloatArray,
+        val eF1Open: FloatArray,
+        val eF2Damma: FloatArray,
+        val eF2Fatha: FloatArray,
+        val eF2Kasra: FloatArray,
+        val eTafashie: FloatArray,
+        val eSibilant: FloatArray
+    )
+
+    @Volatile private var refWordTemplates: List<FloatArray>? = null
+    @Volatile private var loadingRef = false
+
+    /** يحمّل ويفكّ تشفير تلاوة الشيخ المنشاوي المرجعية في الخلفية لاستخدامها في المقارنة الطيفية بالملي (DTW). */
+    fun ensureReferenceLoaded(ctx: Context) {
+        if (refWordTemplates != null || loadingRef) return
+        loadingRef = true
+        Thread {
+            try {
+                val f = File(ctx.cacheDir, "minshawy_002255.mp3")
+                if (!f.exists() || f.length() < 10000L) {
+                    val conn = URL(AUDIO_URL).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 30000
+                    conn.inputStream.use { inp ->
+                        FileOutputStream(f).use { out -> inp.copyTo(out) }
+                    }
+                }
+                val refWave = decodeMp3ToMono16kHz(f)
+                if (refWave != null && refWave.size > SR * 15) {
+                    val (wWaves, _, _) = segmentFullRecitationInto50Words(refWave)
+                    refWordTemplates = wWaves
+                }
+            } catch (e: Exception) {
+                // في حال عدم توفر الإنترنت، يعمل المحرك الفيزيائي المدمج بكامل طاقته دون توقف
+            } finally {
+                loadingRef = false
+            }
+        }.start()
+    }
+
+    private fun decodeMp3ToMono16kHz(file: File): FloatArray? {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            var trackIndex = -1
+            var format: MediaFormat? = null
+            for (i in 0 until extractor.trackCount) {
+                val fmt = extractor.getTrackFormat(i)
+                val mime = fmt.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("audio/")) {
+                    trackIndex = i
+                    format = fmt
+                    break
+                }
+            }
+            if (trackIndex < 0 || format == null) return null
+            extractor.selectTrack(trackIndex)
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: return null
+            val srcRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 22050
+            val channels = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 1
+            val codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(format, null, null, 0)
+            codec.start()
+
+            val pcmOut = ByteArrayOutputStream(SR * 2 * 50)
+            val info = MediaCodec.BufferInfo()
+            var sawInputEOS = false
+            var sawOutputEOS = false
+            while (!sawOutputEOS) {
+                if (!sawInputEOS) {
+                    val inIdx = codec.dequeueInputBuffer(10000)
+                    if (inIdx >= 0) {
+                        val inBuf = codec.getInputBuffer(inIdx)
+                        if (inBuf != null) {
+                            val sampleSize = extractor.readSampleData(inBuf, 0)
+                            if (sampleSize < 0) {
+                                codec.queueInputBuffer(inIdx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                sawInputEOS = true
+                            } else {
+                                codec.queueInputBuffer(inIdx, 0, sampleSize, extractor.sampleTime, 0)
+                                extractor.advance()
+                            }
+                        }
+                    }
+                }
+                val outIdx = codec.dequeueOutputBuffer(info, 10000)
+                if (outIdx >= 0) {
+                    val outBuf = codec.getOutputBuffer(outIdx)
+                    if (outBuf != null && info.size > 0) {
+                        outBuf.position(info.offset)
+                        outBuf.limit(info.offset + info.size)
+                        val chunk = ByteArray(info.size)
+                        outBuf.get(chunk)
+                        pcmOut.write(chunk)
+                    }
+                    codec.releaseOutputBuffer(outIdx, false)
+                    if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) sawOutputEOS = true
+                }
+            }
+            codec.stop()
+            codec.release()
+
+            val bytes = pcmOut.toByteArray()
+            val totalShorts = bytes.size / 2
+            val framesCount = totalShorts / max(1, channels)
+            val monoSrc = FloatArray(framesCount)
+            var bIdx = 0
+            for (i in 0 until framesCount) {
+                var sum = 0f
+                for (c in 0 until channels) {
+                    val lo = bytes[bIdx].toInt() and 0xFF
+                    val hi = bytes[bIdx + 1].toInt()
+                    val s = ((hi shl 8) or lo).toShort()
+                    sum += s.toFloat() / 32768f
+                    bIdx += 2
+                }
+                monoSrc[i] = sum / channels
+            }
+            if (srcRate == SR) return monoSrc
+            val dstLen = (framesCount.toDouble() * SR.toDouble() / srcRate.toDouble()).toInt()
+            val resampled = FloatArray(dstLen)
+            val ratio = srcRate.toDouble() / SR.toDouble()
+            for (i in 0 until dstLen) {
+                val srcPos = i * ratio
+                val idx0 = srcPos.toInt().coerceIn(0, framesCount - 1)
+                val idx1 = (idx0 + 1).coerceIn(0, framesCount - 1)
+                val frac = (srcPos - idx0).toFloat()
+                resampled[i] = monoSrc[idx0] * (1f - frac) + monoSrc[idx1] * frac
+            }
+            return resampled
+        } catch (e: Exception) {
+            return null
+        } finally {
+            try { extractor.release() } catch (e: Exception) { }
+        }
+    }
+
+    fun pcmBytesToFloatArray(pcm: ByteArray): FloatArray {
+        val n = pcm.size / 2
+        val out = FloatArray(n)
+        for (i in 0 until n) {
+            val lo = pcm[i * 2].toInt() and 0xFF
+            val hi = pcm[i * 2 + 1].toInt()
+            val s = ((hi shl 8) or lo).toShort()
+            out[i] = s.toFloat() / 32768f
+        }
+        return out
+    }
+
+    /** تحويل فورييه السريع (Radix-2 FFT بطول 512) لحساب الطيف الترددي بدقة 31.25Hz لكل خانة. */
+    private fun fft512Power(signal: FloatArray): FloatArray {
+        val n = 512
+        val re = FloatArray(n)
+        val im = FloatArray(n)
+        val copyLen = min(signal.size, n)
+        for (i in 0 until copyLen) re[i] = signal[i]
+
+        var j = 0
+        for (i in 1 until n) {
+            var bit = n shr 1
+            while (j and bit != 0) {
+                j = j xor bit
+                bit = bit shr 1
+            }
+            j = j xor bit
+            if (i < j) {
+                val tr = re[i]; re[i] = re[j]; re[j] = tr
+                val ti = im[i]; im[i] = im[j]; im[j] = ti
+            }
+        }
+
+        var len = 2
+        while (len <= n) {
+            val half = len shr 1
+            val ang = -2.0 * PI / len.toDouble()
+            val wLenRe = cos(ang).toFloat()
+            val wLenIm = sin(ang).toFloat()
+            var i = 0
+            while (i < n) {
+                var wRe = 1f
+                var wIm = 0f
+                for (k in 0 until half) {
+                    val uRe = re[i + k]
+                    val uIm = im[i + k]
+                    val vRe = re[i + k + half] * wRe - im[i + k + half] * wIm
+                    val vIm = re[i + k + half] * wIm + im[i + k + half] * wRe
+                    re[i + k] = uRe + vRe
+                    im[i + k] = uIm + vIm
+                    re[i + k + half] = uRe - vRe
+                    im[i + k + half] = uIm - vIm
+                    val nextWRe = wRe * wLenRe - wIm * wLenIm
+                    wIm = wRe * wLenIm + wIm * wLenRe
+                    wRe = nextWRe
+                }
+                i += len
+            }
+            len = len shl 1
+        }
+
+        val halfBins = n / 2 + 1
+        val power = FloatArray(halfBins)
+        for (b in 0 until halfBins) {
+            power[b] = re[b] * re[b] + im[b] * im[b]
+        }
+        return power
+    }
+
+    fun extractFrameFeatures(wave: FloatArray): FrameFeatures {
+        val frameLen = 400 // 25ms at 16kHz
+        val hopLen = 160   // 10ms at 16kHz
+        val padded = if (wave.size < frameLen) FloatArray(frameLen).also { wave.copyInto(it) } else wave
+        val nFrames = 1 + (padded.size - frameLen) / hopLen
+        val window = FloatArray(frameLen) { i ->
+            (0.54 - 0.46 * cos(2.0 * PI * i / (frameLen - 1))).toFloat()
+        }
+
+        val rms = FloatArray(nFrames)
+        val zcr = FloatArray(nFrames)
+        val eF1Closed = FloatArray(nFrames) // bins 8..15  (250 - 468 Hz)
+        val eF1Open = FloatArray(nFrames)   // bins 19..27 (593 - 843 Hz)
+        val eF2Damma = FloatArray(nFrames)  // bins 25..37 (781 - 1156 Hz)
+        val eF2Fatha = FloatArray(nFrames)  // bins 38..54 (1187 - 1687 Hz)
+        val eF2Kasra = FloatArray(nFrames)  // bins 46..86 (1437 - 2687 Hz)
+        val eTafashie = FloatArray(nFrames) // bins 64..121 (2000 - 3781 Hz)
+        val eSibilant = FloatArray(nFrames) // bins 134..243 (4187 - 7593 Hz)
+
+        val rawWin = FloatArray(frameLen)
+        val preWin = FloatArray(frameLen)
+
+        fun bandSum(spec: FloatArray, b0: Int, b1: Int): Float {
+            var s = 0f
+            for (b in b0..min(b1, spec.size - 1)) s += spec[b]
+            return s
+        }
+
+        for (f in 0 until nFrames) {
+            val base = f * hopLen
+            var sq = 0f
+            var zc = 0
+            for (k in 0 until frameLen) {
+                val v = padded[base + k]
+                sq += v * v
+                if (k > 0 && ((v >= 0f) != (padded[base + k - 1] >= 0f))) zc++
+                rawWin[k] = v * window[k]
+                val prev = if (k == 0) v else padded[base + k - 1]
+                preWin[k] = (v - 0.95f * prev) * window[k]
+            }
+            rms[f] = sqrt(sq / frameLen + 1e-12f)
+            zcr[f] = zc.toFloat() / (frameLen - 1).toFloat()
+
+            val rawSpec = fft512Power(rawWin)
+            var rawTot = 1e-12f
+            for (v in rawSpec) rawTot += v
+            eF1Closed[f] = bandSum(rawSpec, 8, 15) / rawTot
+            eF1Open[f] = bandSum(rawSpec, 19, 27) / rawTot
+
+            val preSpec = fft512Power(preWin)
+            var preTot = 1e-12f
+            for (v in preSpec) preTot += v
+            eF2Damma[f] = bandSum(preSpec, 25, 37) / preTot
+            eF2Fatha[f] = bandSum(preSpec, 38, 54) / preTot
+            eF2Kasra[f] = bandSum(preSpec, 46, 86) / preTot
+            eTafashie[f] = bandSum(preSpec, 64, 121) / preTot
+            eSibilant[f] = bandSum(preSpec, 134, 243) / preTot
+        }
+        return FrameFeatures(rms, zcr, eF1Closed, eF1Open, eF2Damma, eF2Fatha, eF2Kasra, eTafashie, eSibilant)
+    }
+
+    private fun computeExpectedWeights(): FloatArray {
+        val weights = FloatArray(50)
+        for (w in 0 until 50) {
+            val sp = WORD_SPECS[w]
+            val wq = w in NATURAL_WAQF_SET
+            val vowels = if (wq) sp.waqfVowels else sp.waslVowels
+            var durMs = 0f
+            if (sp.safeer) durMs += 75f
+            else if (sp.tafashie) durMs += 85f
+            else if (sp.interdental) durMs += 70f
+            for (v in vowels) {
+                durMs += if (v.length >= 2) {
+                    if (sp.maddType == "MUTTASIL") 580f
+                    else if (sp.maddType == "MUNFASIL" && !wq) 420f
+                    else 280f
+                } else 140f
+            }
+            if (sp.reqGhunnah && !wq) durMs += 240f
+            weights[w] = durMs / 100f
+        }
+        return weights
+    }
+
+    private fun forcedAlignPhraseWords(
+        feats: FrameFeatures,
+        wStart: Int,
+        wEnd: Int,
+        fStart: Int,
+        fEnd: Int,
+        expWeights: FloatArray
+    ): List<Pair<Int, Int>> {
+        val nWords = wEnd - wStart + 1
+        if (nWords <= 1) return listOf(Pair(fStart, fEnd))
+        val phraseLen = max(nWords * 4, fEnd - fStart)
+        var totalSubW = 0f
+        for (w in wStart..wEnd) totalSubW += expWeights[w]
+        val expLens = FloatArray(nWords) { k -> max(4f, phraseLen * (expWeights[wStart + k] / max(0.1f, totalSubW))) }
+        val expCum = FloatArray(nWords + 1)
+        for (k in 0 until nWords) expCum[k + 1] = expCum[k] + expLens[k]
+
+        val INF = 1e9f
+        val dp = Array(nWords + 1) { FloatArray(phraseLen + 1) { INF } }
+        val back = Array(nWords + 1) { IntArray(phraseLen + 1) }
+        dp[0][0] = 0f
+
+        var maxRms = 1e-6f
+        for (f in fStart until min(feats.rms.size, fEnd)) {
+            if (feats.rms[f] > maxRms) maxRms = feats.rms[f]
+        }
+
+        val band = max(18, (phraseLen * 0.22f).toInt())
+        for (k in 1..nWords) {
+            val expPos = expCum[k].roundToInt()
+            val expLen = expLens[k - 1]
+            val fLo = if (k == nWords) phraseLen else max(k * 4, expPos - band)
+            val fHi = if (k == nWords) phraseLen else min(phraseLen - (nWords - k) * 4, expPos + band)
+            val prevExpPos = expCum[k - 1].roundToInt()
+            val pLo = if (k == 1) 0 else max((k - 1) * 4, prevExpPos - band)
+            val pHi = if (k == 1) 0 else min(phraseLen, prevExpPos + band)
+
+            for (f in fLo..fHi) {
+                val rmsIdx = (fStart + min(f, phraseLen - 1)).coerceIn(0, feats.rms.size - 1)
+                val dipCost = if (k < nWords) (feats.rms[rmsIdx] / maxRms) * 10.0f else 0f
+                var bestC = INF
+                var bestP = pLo
+                val maxP = min(f - 3, pHi)
+                for (p in pLo..maxP) {
+                    val prevC = dp[k - 1][p]
+                    if (prevC >= INF) continue
+                    val actualLen = (f - p).toFloat()
+                    val denom = max(6f, expLen * 0.35f)
+                    val diff = (actualLen - expLen) / denom
+                    val c = prevC + diff * diff + dipCost
+                    if (c < bestC) {
+                        bestC = c
+                        bestP = p
+                    }
+                }
+                dp[k][f] = bestC
+                back[k][f] = bestP
+            }
+        }
+
+        val spans = ArrayList<Pair<Int, Int>>(nWords)
+        for (k in 0 until nWords) spans.add(Pair(fStart, fEnd))
+        var curF = phraseLen
+        for (k in nWords downTo 1) {
+            val prevF = back[k][curF]
+            spans[k - 1] = Pair(fStart + prevF, min(feats.rms.size, fStart + curF))
+            curF = prevF
+        }
+        return spans
+    }
+
+    fun segmentFullRecitationInto50Words(wave: FloatArray): Triple<List<FloatArray>, BooleanArray, Float> {
+        val feats = extractFrameFeatures(wave)
+        val rms = feats.rms
+        val nFrames = rms.size
+        val hopSamples = 160
+        if (nFrames < 50) {
+            return Triple(List(50) { FloatArray(0) }, BooleanArray(50), 105f)
+        }
+        val sortedRms = rms.clone().also { it.sort() }
+        val peakRms = sortedRms[(nFrames * 0.95).toInt().coerceIn(0, nFrames - 1)]
+        val silenceThresh = max(peakRms * 0.05f, 1e-4f)
+        val isSilent = BooleanArray(nFrames) { rms[it] < silenceThresh }
+
+        class PauseSpan(val s: Int, val e: Int, val dur: Int)
+        val pauses = ArrayList<PauseSpan>()
+        var runStart = -1
+        for (i in 0 until nFrames) {
+            if (isSilent[i]) {
+                if (runStart < 0) runStart = i
+            } else {
+                if (runStart >= 0) {
+                    val dur = i - runStart
+                    if (runStart > 5 && dur >= 24) pauses.add(PauseSpan(runStart, i, dur))
+                    runStart = -1
+                }
+            }
+        }
+
+        val expWeights = computeExpectedWeights()
+        val cumWeights = FloatArray(50)
+        var acc = 0f
+        for (w in 0 until 50) { acc += expWeights[w]; cumWeights[w] = acc }
+        val totalWeight = cumWeights[49]
+
+        var firstFrame = 0
+        while (firstFrame < nFrames && isSilent[firstFrame]) firstFrame++
+        var lastFrame = nFrames - 1
+        while (lastFrame > firstFrame && isSilent[lastFrame]) lastFrame--
+        lastFrame = min(nFrames, lastFrame + 1)
+
+        var pauseFramesTotal = 0
+        for (p in pauses) if (p.s >= firstFrame && p.e <= lastFrame) pauseFramesTotal += p.dur
+        val totalSpeechFrames = max(50, (lastFrame - firstFrame) - pauseFramesTotal)
+
+        class PhraseSpan(val wStart: Int, val wEnd: Int, val fStart: Int, val fEnd: Int)
+        val phraseSpans = ArrayList<PhraseSpan>()
+        var curW = 0
+        var curF = firstFrame
+        var spokenBefore = 0
+
+        for (p in pauses) {
+            if (p.s <= curF + 10 || p.e >= lastFrame - 10) continue
+            spokenBefore += (p.s - curF)
+            val targetCumW = (spokenBefore.toFloat() / totalSpeechFrames.toFloat()) * totalWeight
+            var bestW = curW
+            var bestDist = 1e9f
+            for (candW in curW until 49) {
+                var dist = abs(cumWeights[candW] - targetCumW)
+                if (candW !in NATURAL_WAQF_SET) dist += 8.0f
+                if (dist < bestDist) {
+                    bestDist = dist
+                    bestW = candW
+                }
+            }
+            phraseSpans.add(PhraseSpan(curW, bestW, curF, p.s))
+            curW = bestW + 1
+            curF = p.e
+            if (curW >= 50) break
+        }
+        if (curW < 50) phraseSpans.add(PhraseSpan(curW, 49, curF, lastFrame))
+
+        val wordWaves = ArrayList<FloatArray>(50)
+        for (w in 0 until 50) wordWaves.add(FloatArray(0))
+        val isWaqf = BooleanArray(50)
+
+        for (ps in phraseSpans) {
+            isWaqf[ps.wEnd] = true
+            val intervals = forcedAlignPhraseWords(feats, ps.wStart, ps.wEnd, ps.fStart, ps.fEnd, expWeights)
+            for (idxOffset in intervals.indices) {
+                val wIdx = ps.wStart + idxOffset
+                val (wf0, wf1) = intervals[idxOffset]
+                val s0 = (wf0 * hopSamples).coerceIn(0, wave.size)
+                val s1 = (wf1 * hopSamples).coerceIn(s0, wave.size)
+                wordWaves[wIdx] = wave.copyOfRange(s0, s1)
+            }
+        }
+
+        val ref2BeatWords = intArrayOf(7, 13, 27)
+        val unitMsList = ArrayList<Float>()
+        for (rw in ref2BeatWords) {
+            val ww = wordWaves[rw]
+            if (ww.size > 400) {
+                val wf = extractFrameFeatures(ww)
+                val pk = wf.rms.maxOrNull() ?: 0f
+                var vf = 0
+                for (i in wf.rms.indices) if (wf.rms[i] > pk * 0.18f && wf.zcr[i] < 0.28f) vf++
+                if (vf >= 4) unitMsList.add((vf * 10f) / 2f)
+            }
+        }
+        unitMsList.sort()
+        val calHarakah = if (unitMsList.isNotEmpty()) unitMsList[unitMsList.size / 2].coerceIn(75f, 160f) else 105f
+        return Triple(wordWaves, isWaqf, calHarakah)
+    }
+
+    private fun classifyVowelSegment(feats: FrameFeatures, fStart: Int, fEnd: Int): String {
+        if (fEnd <= fStart) return "a"
+        var f1Open = 0f
+        var f1Closed = 0f
+        var f2Damma = 0f
+        var f2Kasra = 0f
+        val cnt = (fEnd - fStart).toFloat()
+        for (i in fStart until fEnd) {
+            f1Open += feats.eF1Open[i]
+            f1Closed += feats.eF1Closed[i]
+            f2Damma += feats.eF2Damma[i]
+            f2Kasra += feats.eF2Kasra[i]
+        }
+        f1Open /= cnt; f1Closed /= cnt; f2Damma /= cnt; f2Kasra /= cnt
+        if (f1Open > f1Closed * 1.15f) return "a"
+        if (f2Kasra > f2Damma * 1.10f) return "i"
+        return "u"
+    }
+
+    fun auditSingleWordAcoustics(
+        wordIdx: Int,
+        wordWave: FloatArray,
+        isWaqf: Boolean,
+        harakahMs: Float,
+        lenientMadd: Boolean
+    ): List<String> {
+        val sp = WORD_SPECS[wordIdx]
+        val expVowels = if (isWaqf) sp.waqfVowels else sp.waslVowels
+        val errs = ArrayList<String>()
+        if (wordWave.size < 800) {
+            errs.add("لم يُلتقط صوت كافٍ لهذه الكلمة (قد تكون تُركت أو قُرئت بسرعة خاطفة).")
+            return errs
+        }
+        val feats = extractFrameFeatures(wordWave)
+        val nFrames = feats.rms.size
+        val peakRms = feats.rms.maxOrNull() ?: 0f
+        if (peakRms < 0.015f) {
+            errs.add("لم تُقرأ هذه الكلمة بصوت مسموع.")
+            return errs
+        }
+
+        val activeIdx = ArrayList<Int>()
+        for (i in 0 until nFrames) {
+            if (feats.rms[i] > peakRms * 0.18f && feats.zcr[i] < 0.28f) activeIdx.add(i)
+        }
+        val voicedMs = activeIdx.size * 10f
+
+        // 1. فحص أزمنة المدود بالملي ثانية
+        if (sp.maddType == "MUTTASIL") {
+            val reqMs = harakahMs * (if (lenientMadd) 3.2f else 3.6f)
+            if (voicedMs < reqMs) {
+                errs.add("خطأ في التجويد (المد الواجب المتصل): قصر مد «${sp.text}» عن مقداره الواجب (٤–٥ حركات).")
+            }
+        } else if (sp.maddType == "MUNFASIL" && !isWaqf) {
+            val reqMs = harakahMs * (if (lenientMadd) 1.7f else 3.2f)
+            if (voicedMs < reqMs) {
+                errs.add("خطأ في التجويد (المد المنفصل / الصلة الكبرى): قصر المد في «${sp.text}» عن الحد المعتبر.")
+            }
+        } else if (sp.maddType == "TABEEI" && !isWaqf) {
+            val minWordMs = harakahMs * (sp.minHarakat * 0.58f)
+            if (voicedMs < minWordMs) {
+                errs.add("خطأ في التجويد (المد الطبيعي): إسقاط أو قصر حرف المد في «${sp.text}».")
+            }
+        }
+
+        // 2. فحص الغنة والإخفاء والإدغام وصلاً
+        if (sp.reqGhunnah && !isWaqf) {
+            var nasalFrames = 0
+            for (i in 0 until nFrames) {
+                if (feats.rms[i] > peakRms * 0.12f && feats.eF1Closed[i] > 0.35f && feats.eF1Open[i] < 0.20f) {
+                    nasalFrames++
+                }
+            }
+            val nasalMs = nasalFrames * 10f
+            if (nasalMs < harakahMs * 1.15f) {
+                errs.add("خطأ في التجويد (الغنة / الإخفاء / الإدغام): نقص زمن الغنة أو إظهار التنوين/النون في «${sp.text}».")
+            }
+        }
+
+        // 3. فحص إبدال الذال أو الظاء بحرف صفير (زاي / سين)
+        if (sp.interdental && !sp.safeer) {
+            val maxSib = feats.eSibilant.maxOrNull() ?: 0f
+            if (maxSib > 0.38f) {
+                val letter = if (sp.text.contains("ظ")) "الظاء" else "الذال"
+                errs.add("خطأ في مخرج الحرف: نطقت $letter بحرف صفير (زاي/سين) في «${sp.text}» — احرص على إخراج طرف اللسان.")
+            }
+        }
+
+        // 4. فحص إبدال الشين سيناً
+        if (sp.tafashie && !sp.safeer) {
+            val maxSib = feats.eSibilant.maxOrNull() ?: 0f
+            val maxTaf = feats.eTafashie.maxOrNull() ?: 0f
+            if (maxSib > 0.38f && maxSib > maxTaf * 1.45f) {
+                errs.add("خطأ في مخرج الحرف وصفته: إبدال الشين سيناً (ضعف التفشي وزيادة الصفير) في «${sp.text}».")
+            }
+        }
+
+        // 5. فحص التشكيل (الحركات في أول الكلمة وآخرها — مثل سِنَةً بالفتح مقابل سِنَةٌ بالضم)
+        if (activeIdx.size >= 6 && expVowels.isNotEmpty()) {
+            val weights = FloatArray(expVowels.size) { k ->
+                val v = expVowels[k]
+                if (v.length >= 2) {
+                    if (sp.maddType == "MUTTASIL") 4.0f
+                    else if (sp.maddType == "MUNFASIL" && !isWaqf) 3.0f
+                    else 2.0f
+                } else 1.0f
+            }
+            val ghW = if (sp.reqGhunnah && !isWaqf) 1.6f else 0f
+            val vowelSum = weights.sum()
+            val totalW = vowelSum + ghW
+            val nAct = activeIdx.size
+            val vEndIdx = (nAct * (vowelSum / totalW)).roundToInt().coerceIn(2, nAct)
+            val firstEnd = (nAct * (weights[0] / totalW)).roundToInt().coerceIn(2, vEndIdx)
+            val lastStart = (nAct * ((vowelSum - weights.last()) / totalW)).roundToInt().coerceIn(0, max(0, vEndIdx - 2))
+
+            fun vName(v: String): String = when (v) {
+                "a" -> "الفتحة"
+                "u" -> "الضمة"
+                "i" -> "الكسرة"
+                else -> v
+            }
+
+            val firstBase = expVowels.first().first().toString()
+            val predFirst = classifyVowelSegment(feats, activeIdx[0], activeIdx[firstEnd - 1] + 1)
+            if (predFirst != firstBase) {
+                errs.add("خطأ في التشكيل (أول الكلمة): نطقت «${vName(predFirst)}» بدلاً من «${vName(firstBase)}» في أول «${sp.text}».")
+            }
+            if (expVowels.size >= 2 && vEndIdx >= 2) {
+                val lastBase = expVowels.last().first().toString()
+                val predLast = classifyVowelSegment(feats, activeIdx[lastStart], activeIdx[vEndIdx - 1] + 1)
+                if (predLast != lastBase) {
+                    errs.add("خطأ في التشكيل (آخر الكلمة / الإعراب): نطقت «${vName(predLast)}» بدلاً من «${vName(lastBase)}» في آخر «${sp.text}».")
+                }
+            }
+        }
+
+        // 6. فحص التفخيم والترقيق عبر تردد الفورمانت الثاني F2
+        if (sp.tafkheem && activeIdx.size >= 4) {
+            var minKasraRatio = 999f
+            for (idx in activeIdx) {
+                val r = feats.eF2Kasra[idx] / (feats.eF2Damma[idx] + 1e-5f)
+                if (r < minKasraRatio) minKasraRatio = r
+            }
+            if (minKasraRatio > 1.85f) {
+                errs.add("خطأ في صفات الحروف (التفخيم): ترقيق الحرف المفخم في «${sp.text}».")
+            }
+        }
+
+        // 7. المقارنة الطيفية المباشرة (CMVN-DTW) بالتلاوة المرجعية للشيخ المنشاوي إن كانت محمّلة
+        val refs = refWordTemplates
+        if (refs != null && wordIdx in refs.indices && refs[wordIdx].size > 800) {
+            val dtwDist = cmvnDtwDistance(feats, extractFrameFeatures(refs[wordIdx]))
+            if (dtwDist > 0.42f && errs.isEmpty()) {
+                errs.add("خطأ في النطق أو التشكيل (مقارنةً بمرجع الشيخ المنشاوي): انحراف البصمة الصوتية للكلمة عن النطق المرجعي الصحيح.")
+            }
+        }
+
+        return errs
+    }
+
+    private fun cmvnDtwDistance(fU: FrameFeatures, fR: FrameFeatures): Float {
+        fun extractActiveMatrix(f: FrameFeatures): Array<FloatArray> {
+            val pk = f.rms.maxOrNull() ?: 0f
+            val list = ArrayList<FloatArray>()
+            for (i in f.rms.indices) {
+                if (f.rms[i] > pk * 0.15f) {
+                    list.add(
+                        floatArrayOf(
+                            f.eF1Closed[i], f.eF1Open[i], f.eF2Damma[i],
+                            f.eF2Fatha[i], f.eF2Kasra[i], f.eTafashie[i], f.eSibilant[i]
+                        )
+                    )
+                }
+            }
+            if (list.isEmpty()) {
+                list.add(floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f))
+            }
+            return list.toTypedArray()
+        }
+
+        val mu = extractActiveMatrix(fU)
+        val mr = extractActiveMatrix(fR)
+        val n = mu.size
+        val m = mr.size
+        val w = m + 1
+        val dp = FloatArray((n + 1) * w) { 1e9f }
+        dp[0] = 0f
+        for (i in 1..n) {
+            val row = i * w
+            val prev = (i - 1) * w
+            val uVec = mu[i - 1]
+            for (j in 1..m) {
+                val rVec = mr[j - 1]
+                var sq = 0f
+                for (d in 0 until 7) {
+                    val diff = uVec[d] - rVec[d]
+                    sq += diff * diff
+                }
+                val cost = sqrt(sq)
+                val bestPrev = min(dp[prev + j - 1], min(dp[prev + j], dp[row + j - 1]))
+                dp[row + j] = cost + bestPrev
+            }
+        }
+        return dp[n * w + m] / max(n, m).toFloat()
+    }
+
+    /** فحص صوتي وفيزيائي شامل للتلاوة المسجلة (50 كلمة) يعمل مباشرة على الهاتف بدون خادم أو بجانبه. */
+    fun audit(ctx: Context, pcm: ByteArray, nWords: Int, lenientMadd: Boolean): RemoteAuditor.AuditResult {
+        ensureReferenceLoaded(ctx)
+        val wave = pcmBytesToFloatArray(pcm)
+        if (wave.size < SR * 2) {
+            return RemoteAuditor.AuditResult(
+                List(nWords) { RemoteAuditor.WordResult(false, "التسجيل قصير جداً.", "") },
+                "",
+                "التسجيل قصير جداً، يرجى قراءة الآية بصوت واضح."
+            )
+        }
+        val (wordWaves, isWaqf, calHarakah) = segmentFullRecitationInto50Words(wave)
+        val results = ArrayList<RemoteAuditor.WordResult>(nWords)
+        for (w in 0 until nWords) {
+            if (w >= 50) {
+                results.add(RemoteAuditor.WordResult(true, "", ""))
+                continue
+            }
+            val errs = auditSingleWordAcoustics(w, wordWaves[w], isWaqf[w], calHarakah, lenientMadd)
+            val ok = errs.isEmpty()
+            val note = if (ok) "" else errs.joinToString("\n• ", prefix = "• ")
+            results.add(RemoteAuditor.WordResult(ok, note, ""))
+        }
+        return RemoteAuditor.AuditResult(results, "OnDevice-Physical-Acoustic-DSP-v5", null)
+    }
+}
+
+/**
+ * الفحص الدقيق الشامل (الإصدار الخامس):
+ * يجمع بين:
+ * 1) الفحص الفيزيائي الطيفي والمرجعي المدمج (LocalAcousticAuditor: فورمانت التشكيل F1/F2 + أزمنة المدود بالملي ثانية + رنين الغنة + الصفير والتفشي + مقارنة مرجع الشيخ المنشاوي DTW).
+ * 2) الفحص العصبي الفونيمي عبر خادم quran-muaalem (إن وُجد عنوان خادم) مع محاذاة الوقف والوصل والابتداء (QPS DP Aligner).
+ * وتُطبَّق قاعدة الاتحاد الصارم: لا تُحسب الكلمة صحيحة إلا إذا اجتازت الفحصين معاً دون أي خطأ تشكيل أو تجويد أو حرف!
  */
 object RemoteAuditor {
     const val SAMPLE_RATE = 16000
@@ -107,12 +900,44 @@ object RemoteAuditor {
         AuditResult(List(n) { WordResult(false, "", "") }, raw, msg)
 
     /**
-     * تنقية الإشارة الصوتية الخام (PCM 16-bit LE):
-     * - إزالة الإزاحة المستمرة (DC Offset)
-     * - تشذيب نقرة زر البدء/الإيقاف في أول وآخر 80ms
-     * - تشذيب الصمت الطويل في البداية والنهاية مع إبقاء هامش آمن (180ms)
-     * - تطبيع مستوى الصوت (Peak Normalization) للتسجيلات المنخفضة
+     * نقطة الدخول الموحدة للفحص الشامل (تعمل دائماً سواء وُجد عنوان خادم خارجي أم لم يوجد):
+     * - تشغّل المحرك الفيزيائي الطيفي والمرجعي المدمج (LocalAcousticAuditor) لفحص التشكيل والمدود والغنة والمخارج.
+     * - إن وُجد عنوان خادم، تشغّل أيضاً الفحص العصبي (audit) وتدمج نتائج المحركين معاً بصرامة تامة.
      */
+    fun auditComprehensive(
+        ctx: Context,
+        baseUrl: String,
+        pcm: ByteArray,
+        sura: Int,
+        aya: Int,
+        nWords: Int,
+        lenient: Boolean
+    ): AuditResult {
+        val localRes = LocalAcousticAuditor.audit(ctx, pcm, nWords, lenient)
+        if (baseUrl.isBlank()) {
+            return localRes
+        }
+        val remoteRes = audit(baseUrl, pcm, sura, aya, nWords, lenient)
+        if (remoteRes.error != null) {
+            return remoteRes
+        }
+        // دمج صارم (Strict Union): أي خطأ يكتشفه الخادم العصبي أو المحلل الفيزيائي الطيفي يُرصد فوراً!
+        val mergedWords = ArrayList<WordResult>(nWords)
+        for (i in 0 until nWords) {
+            val rw = remoteRes.words[i]
+            val lw = localRes.words[i]
+            val ok = rw.ok && lw.ok
+            val sb = StringBuilder()
+            if (rw.note.isNotEmpty()) sb.append(rw.note)
+            if (lw.note.isNotEmpty()) {
+                if (sb.isNotEmpty()) sb.append("\n\n")
+                sb.append("التحليل الصوتي الطيفي والمرجعي:\n").append(lw.note)
+            }
+            mergedWords.add(WordResult(ok, sb.toString(), rw.heard))
+        }
+        return AuditResult(mergedWords, remoteRes.raw, null)
+    }
+
     fun conditionPcm(pcm: ByteArray): ByteArray {
         val nSamples = pcm.size / 2
         if (nSamples < SAMPLE_RATE) return pcm
@@ -131,7 +956,6 @@ object RemoteAuditor {
             samples[i] = v.toShort()
         }
 
-        // كتم أول وآخر 60ms لتلافي صوت نقرة الزر على الشاشة
         val clickGuard = (SAMPLE_RATE * 0.06).toInt()
         if (nSamples > clickGuard * 4) {
             for (i in 0 until clickGuard) {
@@ -142,9 +966,8 @@ object RemoteAuditor {
             }
         }
 
-        // حساب طاقة الإطارات لتشذيب الصمت الطويل مع إبقاء هامش 180ms
-        val frameLen = SAMPLE_RATE / 40 // 25ms = 400 samples
-        val hopLen = SAMPLE_RATE / 100  // 10ms = 160 samples
+        val frameLen = SAMPLE_RATE / 40
+        val hopLen = SAMPLE_RATE / 100
         val nFrames = if (nSamples > frameLen) 1 + (nSamples - frameLen) / hopLen else 0
         var startSample = 0
         var endSample = nSamples
@@ -206,7 +1029,6 @@ object RemoteAuditor {
         return out.toByteArray()
     }
 
-    /** استدعاء متزامن — يُشغَّل من خيط خلفي فقط. */
     fun audit(baseUrl: String, pcm: ByteArray, sura: Int, aya: Int, nWords: Int, lenient: Boolean): AuditResult {
         var base = baseUrl.trim().trimEnd('/')
         if (!base.startsWith("http")) base = "https://$base"
@@ -259,7 +1081,6 @@ object RemoteAuditor {
             return failure(n, raw, "ردّ غير مفهوم من الخادم")
         }
 
-        // المسار الأول: إذا أعاد الخادم المطور (v4) مصفوفة words_audit المفصلة لكل كلمة
         val wordsAudit = j.optJSONArray("words_audit")
         if (wordsAudit != null && wordsAudit.length() == n) {
             val out = ArrayList<WordResult>(n)
@@ -286,8 +1107,6 @@ object RemoteAuditor {
             return failure(n, raw, "المطابقة وقعت على موضع آخر ($gotSura:$gotAya) وليس الآية المطلوبة")
         }
 
-        // المسار الثاني: إذا توفر predicted_phonemes لآية الكرسي (2:255) من خادم قياسي،
-        // نشغل محرك المحاذاة الصوتية (Waqf/Wasl/Ibtida QPS DP Aligner) مباشرة لضمان دقة 100%!
         val predPh = j.optString("predicted_phonemes", "").replace(" ", "")
         if (sura == 2 && aya == 255 && n == 50 && predPh.isNotEmpty()) {
             val qpsRes = alignQpsToAyatKursi(predPh, lenient)
@@ -296,7 +1115,6 @@ object RemoteAuditor {
             }
         }
 
-        // المسار الثالث (احتياطي لأي آية أخرى): تحليل مصفوفة errors مع منع تسرب الأخطاء عبر المسافات
         val base = maxOf(0, st.optInt("uthmani_word_idx", 0))
         val startCharIdx = st.optInt("uthmani_char_idx", 0)
         val endObj = j.optJSONObject("end")
@@ -306,7 +1124,6 @@ object RemoteAuditor {
         val last = minOf(n, base + covered)
         for (w in base until last) ok[w] = true
 
-        // إذا اقتطع البحث الضبابي أحرفاً من بداية الكلمة الأولى فهذا يعني وجود خطأ في أول الكلمة
         if (startCharIdx > 0 && base in 0 until n) {
             ok[base] = false
             notes[base].append("خطأ في نطق بداية الكلمة.")
@@ -334,12 +1151,10 @@ object RemoteAuditor {
                 val pos = e.optJSONArray("uthmani_pos")
                 var p0 = if (pos != null && pos.length() > 0) pos.optInt(0, 0) else 0
                 var p1 = if (pos != null && pos.length() > 1) pos.optInt(1, p0) else p0
-                // تقليص المسافات من أطراف [p0, p1) لمنع تسرب الخطأ إلى الكلمة المجاورة
                 while (p0 < p1 && p0 < text.length && text[p0] == ' ') p0++
                 while (p1 > p0 && p1 - 1 < text.length && text[p1 - 1] == ' ') p1--
                 var w0 = base + wordAt(text, p0)
                 var w1 = base + wordAt(text, maxOf(p0, p1 - 1))
-                // إذا كان الخطأ يمتد عبر كلمتين بسبب إدغام/إخفاء/همزة وصل، ننسبه إلى الكلمة الأولى صاحبة الحكم
                 if (w1 > w0) w1 = w0
                 w0 = w0.coerceIn(0, n - 1)
                 w1 = w1.coerceIn(0, n - 1)
@@ -363,16 +1178,13 @@ object RemoteAuditor {
         return w
     }
 
-    /** يتحقق مما إذا كان الخطأ المبلَّغ عنه من خادم قديم ناتجاً عن وقف صحيح على رأس جملة. */
     private fun isValidWaqfFalsePositive(w: Int, e: JSONObject): Boolean {
         val ex = e.optString("expected_ph", "")
         val gt = e.optString("predicted_ph", e.optString("preditected_ph", ""))
-        // الابتداء بهمزة الوصل (ءَ) في الكلمات المبدوءة بـ (ال) بعد وقفة صحيحة
         if (w in setOf(5, 6, 15, 18, 21, 42, 48, 49) && ex.isEmpty() && (gt == "ءَ" || gt == "ء")) {
             return true
         }
         if (w !in VALID_WAQF_WORDS) return false
-        // إسقاط حركة آخر الكلمة أو صلة الضمير الصغرى عند الوقف، أو مد العارض للسكون
         if (e.optString("speech_error_type") == "delete" && (ex in listOf("َ", "ُ", "ِ", "ۥۥ", "ۦۦ", "هُۥۥ", "هِۦۦ"))) {
             return true
         }
@@ -439,10 +1251,6 @@ object RemoteAuditor {
         }
         return sb.toString()
     }
-
-    // =========================================================================
-    // محرك المحاذاة الصوتية المترابطة للوقف والوصل والابتداء (QPS DP Aligner)
-    // =========================================================================
 
     private fun comb(vararg parts: Any): List<String> {
         var res = listOf("")

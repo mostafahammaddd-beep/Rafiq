@@ -66,7 +66,7 @@ val WORDS: List<String> = listOf(
 // الشيخ المنشاوي - آية الكرسي (2:255)
 const val AUDIO_URL = "https://everyayah.com/data/Minshawy_Murattal_128kbps/002255.mp3"
 
-// عدم التسامح مع أي كلمة خاطئة سواء في القراءة الموجهة أو التسميع أو الفحص الدقيق (القرآن أمانة)
+// عدم التسامح مع أي كلمة خاطئة في القرآن الكريم (صرامة 100%)
 const val GUIDED_TOLERANCE = 0
 const val PRECISE_TOLERANCE = 0
 
@@ -124,7 +124,6 @@ val TIPS: Map<Int, String> = mapOf(
     49 to "إظهار اللام القمرية، وفتح العين وترقيقها، وتفخيم الظاء المكسورة وإطباقها مع إخراج اللسان، ومدّ عارض للسكون (٢ أو ٤ أو ٦ حركات) مع إسكان الميم وقفاً."
 )
 
-// تطبيع الكلمة المفردة مع الحفاظ على بنية الحروف والهمزات بدقة، وتوحيد الرسم العثماني والإملائي الصحيح فقط
 fun normRawWord(s: String): String {
     val sb = StringBuilder()
     for (ch in s) {
@@ -172,10 +171,6 @@ val OWNER: IntArray = IntArray(REF.length).also { arr ->
 }
 val IS_START: BooleanArray = BooleanArray(REF.length + 1).also { arr -> for (s in W_START) arr[s] = true }
 
-/**
- * استخراج بصمة الحركات (التشكيل) إن وُجدت في مخرجات المعرِّف الصوتي،
- * لرصد أخطاء التشكيل فورياً حتى في الوضع المحلي متى ما أعاد المعرِّفُ الحركات.
- */
 object TashkeelAndMakhrajChecker {
     private fun extractHarakat(wordWithDiacritics: String): List<Pair<Char, String>> {
         val out = ArrayList<Pair<Char, String>>()
@@ -220,14 +215,13 @@ object TashkeelAndMakhrajChecker {
             val (hc, hv) = heardSig[k]
             val (rc, rv) = refSig[k]
             if (hc == rc && hv != rv) {
-                if (k == refSig.size - 1 && hv == "السكون") continue // الوقف بالسكون جائز
+                if (k == refSig.size - 1 && hv == "السكون") continue
                 return "خطأ في التشكيل: نطقت «$hv» على حرف «$hc» والصواب «$rv» في كلمة «${WORDS[wordIdx]}»."
             }
         }
         return null
     }
 
-    /** تشخيص تفصيلي لنوع الخطأ بين الكلمة المتوقعة والكلمة المسموعة (مخرج، صفة، مد، نقص أو زيادة). */
     fun diagnoseOrthographicError(wordIdx: Int, expectedNorm: String, heardNorm: String): String {
         if (heardNorm.isEmpty()) {
             return "لم أسمع هذه الكلمة منك (قد تكون تخطيتَها أثناء التسميع)."
@@ -294,21 +288,14 @@ object TashkeelAndMakhrajChecker {
 }
 
 class AlignResult(
-    val st: Array<WS?>,        // OK / WRONG للكلمات المحسومة، و null لغير المحسومة
-    val heard: Array<String>,  // ما سُمع فعلاً لكل كلمة (بحروف مجرّدة)
-    val notes: Array<String>,  // ملاحظات تشخيصية خاصة بالكلمة (تشكيل / مخرج)
-    val last: Int,             // آخر كلمة وصلت إليها المطابقة
+    val st: Array<WS?>,
+    val heard: Array<String>,
+    val notes: Array<String>,
+    val last: Int,
     val bad: Int,
     val score: Float
 )
 
-/**
- * محرك المطابقة الصارم على مستوى الحروف والكلمات (الإصدار الرابع):
- *  - نسبة التسامح مع الحروف الخاطئة = صفر (allowed = 0f لجميع الكلمات بلا استثناء).
- *  - يدعم نافذة رجوع (Lookback) حتى 4 كلمات سابقة لمنع تلوين الكلمة بالأحمر إذا أعاد القارئ كلمة بعد أخذ النَّفَس.
- *  - يمنع التلوين الأحمر المبكر أثناء الفرضيات الجزئية غير المستقرة (onPartialResults).
- *  - يستخرج الكلمة المسموعة فعلياً بدقة (بما في ذلك الحروف الزائدة أو المبدلة في آخر الكلمة).
- */
 object Aligner {
     private const val INF = 1e9f
     private const val SKIP = 0.85f
@@ -316,7 +303,7 @@ object Aligner {
     private const val SUB_COST = 0.98f
     private const val GAP_COST = 1.00f
 
-    fun align(rawText: String, base: Int, isFinal: Boolean, strict: Boolean): AlignResult? {
+    fun align(rawText: String, base: Int, isFinal: Boolean, strict: Boolean, confidence: Float = 1.0f): AlignResult? {
         val h = norm(rawText)
         val m = h.length
         if (m == 0) return null
@@ -431,12 +418,10 @@ object Aligner {
         val first = OWNER[startCol]
         val last = OWNER[endCol - 1]
 
-        // إذا تخطى القارئ كلمات في بداية الجلسة، لا نوسمها بالخطأ إلا عند الحسم النهائي أو بعد تأكيد كلمتين بعدها
         if (first > base && (isFinal || (last - first >= 1))) {
             for (wi in base until first) st[wi] = WS.WRONG
         }
 
-        // فحص الحركات (التشكيل) في النص الخام إن وُجدت
         val rawTokens = rawText.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
 
         val evalStart = maxOf(base, first)
@@ -446,7 +431,6 @@ object Aligner {
                 if (isFinal || (last - wi >= 2)) st[wi] = WS.WRONG
                 continue
             }
-            // فحص تعارض التشكيل في التوكن المقابل إن أعاد المعرِّف حركات
             val relIdx = wi - first
             if (relIdx in rawTokens.indices) {
                 val tConflict = TashkeelAndMakhrajChecker.checkDiacriticConflict(rawTokens[relIdx], wi)
@@ -456,7 +440,6 @@ object Aligner {
                 }
             }
 
-            // صرامة تامة (allowed = 0f): لا يُتسامح مع أي حرف مبدَّل أو ناقص أو زائد في أي كلمة
             if (wi < last) {
                 if (cost[wi] <= 1e-4f) {
                     st[wi] = WS.OK
@@ -465,12 +448,17 @@ object Aligner {
                 }
             } else if (endCol >= W_END[wi]) {
                 if (cost[wi] <= 1e-4f) {
-                    st[wi] = WS.OK
+                    // إذا كانت ثقة المعرِّف منخفضة جداً (< 0.78) فهذا يدل على أن النموذج اللغوي خمّن الكلمة رغم نطقها خطأً
+                    if (isFinal && confidence in 0.01f..0.78f) {
+                        st[wi] = WS.WRONG
+                        notes[wi] = "انخفاض ثقة النطق الصوتي (${(confidence * 100).toInt()}%): يُحتمل وجود خطأ في التشكيل أو الحروف صحّحه المعرِّف اللغوي تلقائياً."
+                    } else {
+                        st[wi] = WS.OK
+                    }
                 } else if (isFinal) {
                     st[wi] = WS.WRONG
                 }
             } else {
-                // الكلمة الأخيرة لم تكتمل حروفها بعد: عند الحسم النهائي (isFinal) تُعدّ ناقصة/خاطئة
                 if (isFinal) st[wi] = WS.WRONG
             }
         }
@@ -491,25 +479,26 @@ class Engine(private val ctx: Context) {
     val states = mutableStateListOf<WS>().apply { repeat(WORDS.size) { add(WS.PENDING) } }
     val heard = Array(WORDS.size) { "" }
 
-    // ===== الوضع الدقيق: صوت خام ← خادم يحلّل الفونيمات وصفات الحروف (حروف + تشكيل + تجويد) =====
+    // ===== الوضع الصوتي الطيفي والمرجعي الدقيق: مفعَّل افتراضياً دائماً! =====
     val notes = Array(WORDS.size) { "" }
     var serverUrl by mutableStateOf(
         ctx.getSharedPreferences("rafiq", Context.MODE_PRIVATE).getString("server", "") ?: ""
     )
+    var useAcousticMode by mutableStateOf(true)
     var lenientMadd by mutableStateOf(true)
     var recording by mutableStateOf(false)
     var analyzing by mutableStateOf(false)
     var lastRaw by mutableStateOf("")
     private val recorder = PcmRecorder()
     private var auditId = 0
-    val precise: Boolean get() = serverUrl.isNotBlank()
+    val precise: Boolean get() = useAcousticMode || serverUrl.isNotBlank()
 
     private val h = Handler(Looper.getMainLooper())
     private var rec: SpeechRecognizer? = null
     private var player: MediaPlayer? = null
     private var session = 0
-    private var base = 0          // أول كلمة لم تُحسم بعد
-    private var sBase = 0         // قيمة base عند بداية الجلسة الحالية
+    private var base = 0
+    private var sBase = 0
     private var lastR: AlignResult? = null
     private var stopping = false
     private var lastActivity = 0L
@@ -517,6 +506,11 @@ class Engine(private val ctx: Context) {
     private val tone: ToneGenerator? = try {
         ToneGenerator(AudioManager.STREAM_NOTIFICATION, 70)
     } catch (e: Exception) { null }
+
+    init {
+        // تحميل وفك تشفير تلاوة الشيخ المنشاوي المرجعية في الخلفية فور فتح التطبيق
+        LocalAcousticAuditor.ensureReferenceLoaded(ctx)
+    }
 
     fun success() = states.all { it == WS.OK }
 
@@ -535,7 +529,7 @@ class Engine(private val ctx: Context) {
         stopRec(); stopAudio(); h.removeCallbacksAndMessages(null)
         resetAttempt(); phase = Phase.GUIDED
         if (precise) {
-            status = "اضغط «ابدأ التسجيل» ثم اقرأ الآية كاملة بصوتك"
+            status = "اضغط «ابدأ التسجيل» ثم اقرأ الآية كاملة بصوتك (فحص شامل للحروف والتشكيل والتجويد والمدود)"
         } else {
             status = "اقرأ الآية بصوتك…"; startRec()
         }
@@ -625,12 +619,13 @@ class Engine(private val ctx: Context) {
             override fun onResults(b: Bundle?) {
                 if (id != session) return
                 val c = candidates(b)
-                if (c != null) onHyp(c, true) else lastR?.let { commit(it) }
+                val conf = b?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)?.firstOrNull() ?: 1.0f
+                if (c != null) onHyp(c, true, conf) else lastR?.let { commit(it) }
                 restart(id, 0L)
             }
             override fun onPartialResults(b: Bundle?) {
                 if (id != session) return
-                candidates(b)?.let { onHyp(it, false) }
+                candidates(b)?.let { onHyp(it, false, 1.0f) }
             }
         })
         r.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -658,12 +653,11 @@ class Engine(private val ctx: Context) {
         return if (out.isEmpty()) null else out
     }
 
-    private fun onHyp(raw: List<String>, isFinal: Boolean) {
+    private fun onHyp(raw: List<String>, isFinal: Boolean, confidence: Float = 1.0f) {
         if (phase != Phase.GUIDED && phase != Phase.RECITE) return
         val strict = phase == Phase.RECITE
-        // نعتمد الفرضية الصوتية الأولى (الأقرب لما نطقه المستخدم فعلاً) حتى لا يخفي النموذج اللغوي أخطاء النطق
-        val primary = Aligner.align(raw[0], sBase, isFinal, strict)
-        val r = primary ?: raw.drop(1).firstNotNullOfOrNull { Aligner.align(it, sBase, isFinal, strict) }
+        val primary = Aligner.align(raw[0], sBase, isFinal, strict, confidence)
+        val r = primary ?: raw.drop(1).firstNotNullOfOrNull { Aligner.align(it, sBase, isFinal, strict, confidence) }
         if (r == null) {
             if (isFinal) lastR?.let { commit(it) }
             return
@@ -740,7 +734,7 @@ class Engine(private val ctx: Context) {
         ctx.getSharedPreferences("rafiq", Context.MODE_PRIVATE).edit().putString("server", serverUrl).apply()
     }
 
-    /** بدء/إنهاء تسجيل الصوت الخام ثم إرساله للفحص الدقيق. */
+    /** بدء/إنهاء تسجيل الصوت الخام ثم إرساله للفحص الشامل (الفيزيائي الطيفي والمرجعي + الخادم العصبي إن وُجد). */
     fun toggleRecord() {
         if (analyzing || !precise) return
         if (!recording) {
@@ -748,7 +742,7 @@ class Engine(private val ctx: Context) {
             resetAttempt()
             if (recorder.start()) {
                 recording = true
-                status = "جارٍ التسجيل… اقرأ بصوت واضح ثم اضغط «أنهِ وافحص»"
+                status = "جارٍ التسجيل… اقرأ الآية بصوت واضح ثم اضغط «أنهِ وافحص»"
             } else {
                 status = "تعذّر تشغيل الميكروفون"
             }
@@ -760,12 +754,12 @@ class Engine(private val ctx: Context) {
                 return
             }
             analyzing = true
-            status = "جارٍ الفحص الدقيق… قد يستغرق عدة ثوانٍ"
+            status = "جارٍ الفحص الصوتي والطيفي الدقيق (الحروف + التشكيل + المدود + الغنة + المرجع)…"
             val id = ++auditId
             val url = serverUrl
             val len = lenientMadd
             Thread {
-                val res = RemoteAuditor.audit(url, pcm, 2, 255, WORDS.size, len)
+                val res = RemoteAuditor.auditComprehensive(ctx, url, pcm, 2, 255, WORDS.size, len)
                 h.post { applyAudit(res, id) }
             }.start()
         }
@@ -929,11 +923,16 @@ fun App() {
                     Switch(checked = e.showAll, onCheckedChange = { e.showAll = it })
                     Text("إظهار الآية كاملة أثناء التسميع", color = Cream, fontSize = 15.sp)
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Switch(checked = e.useAcousticMode, onCheckedChange = { e.useAcousticMode = it })
+                    Text("الفحص الصوتي والطيفي المرجعي الدقيق (يرصد الحروف + التشكيل + المدود + الغنة)", color = Green, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = e.serverUrl,
                     onValueChange = { e.saveServer(it) },
-                    label = { Text("عنوان خادم الفحص الدقيق", color = Cream) },
+                    label = { Text("عنوان خادم الفحص العصبي الإضافي (اختياري)", color = Cream) },
                     placeholder = { Text("https://example.hf.space", color = Cream.copy(alpha = 0.4f)) },
                     textStyle = TextStyle(color = Cream, fontSize = 15.sp),
                     singleLine = true,
@@ -941,8 +940,9 @@ fun App() {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (e.precise) "الوضع: فحص دقيق للحروف والتشكيل والتجويد وصفات الحروف والوقف والابتداء"
-                    else "الوضع: فحص نصي صارم للحروف — لرصد التشكيل وأحكام التجويد الدقيقة أدخل عنوان خادم الفحص الدقيق.",
+                    if (e.serverUrl.isNotBlank()) "الوضع: فحص مزدوج فائق الدقة (خادم Muaalem العصبي + المحلل الفيزيائي الطيفي والمرجعي المدمج)"
+                    else if (e.useAcousticMode) "الوضع: فحص صوتي طيفي ومرجعي مدمج (يفحص فورمانت التشكيل F1/F2 وأزمنة المدود والغنة ومخارج الحروف ومقارنة الشيخ المنشاوي)"
+                    else "الوضع: تعرّف نصي فقط — فعّل الفحص الصوتي الطيفي أعلاه لرصد التشكيل والتجويد والمدود.",
                     color = if (e.precise) Green else Orange,
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center
@@ -1032,7 +1032,7 @@ fun App() {
         if (e.precise && e.phase == Phase.RESULT) {
             Spacer(Modifier.height(14.dp))
             Text(
-                "الفحص آلي وقد يخطئ نادراً، ولا يغني عن العرض على معلّم مُجاز.",
+                "الفحص يجمع بين التحليل الطيفي الفيزيائي ومقارنة المرجع الصوتي ولا يغني عن العرض على معلّم مُجاز.",
                 color = Cream.copy(alpha = 0.6f), fontSize = 12.sp, textAlign = TextAlign.Center
             )
             if (e.lastRaw.isNotEmpty()) {

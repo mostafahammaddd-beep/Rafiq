@@ -1,7 +1,14 @@
 """
-Fast, Phonologically-Anchored & Waqf-Validated QPS Word-Level Aligner & Diagnostic Engine Test Suite.
+Rafiq v5.0 — Zero-Tolerance Hybrid Quranic Recitation Auditor Server
+Combines:
+1. Coupled Waqf/Wasl/Ibtida QPS Dynamic Programming Aligner
+2. Short-Window Context-Breaking Inference (prevents Wav2Vec2-BERT Transformer from auto-correcting verse errors via long context)
+3. Goodness of Pronunciation (GOP) Token Probability Auditor (`out.phonemes.probs`) for Harakat (<0.82) & Tajweed/Letters (<0.75)
+4. 10-Level Sifat Auditor (Tafkheem/Tarqeeq, Itbaq, Qalqalah / False Qalqalah)
+5. Physical Acoustic-Phonetic & Formant (F1/F2) + Madd Timer + Ghunnah + Sibilance/Tafashie Auditor via Viterbi Forced Alignment
 """
 import time
+import numpy as np
 
 HARAKAT = set("َُؙِ۪")
 MADD_CHARS = set("اۥۦـ")
@@ -9,6 +16,7 @@ NON_ONSET_CHARS = HARAKAT | MADD_CHARS | {"ڇ"}
 
 # Legitimate Waqf (pause) positions in Ayat al-Kursi (end of clauses / breath groups)
 VALID_WAQF_WORDS = {4, 5, 6, 11, 15, 18, 25, 29, 31, 39, 43, 46, 48, 49}
+NATURAL_WAQF_SET = {6, 11, 18, 25, 31, 39, 43, 46, 49}
 
 WORDS_AR = [
     "اللَّهُ", "لَا", "إِلَٰهَ", "إِلَّا", "هُوَ", "الْحَيُّ", "الْقَيُّومُ",
@@ -20,6 +28,61 @@ WORDS_AR = [
     "وَسِعَ", "كُرْسِيُّهُ", "السَّمَاوَاتِ", "وَالْأَرْضَ",
     "وَلَا", "يَئُودُهُ", "حِفْظُهُمَا", "وَهُوَ", "الْعَلِيُّ", "الْعَظِيمُ"
 ]
+
+WORD_ACOUSTIC_SPECS = [
+    # (w, word, wasl_vowels, waqf_vowels, min_harakat, madd_type, req_ghunnah, interdental, safeer, tafashie, tafkheem, internal_sakin)
+    (0,  "اللَّهُ",       ["a", "aa", "u"],        ["a", "aa"],             4.0, "TABEEI",   False, False, False, False, True,  False),
+    (1,  "لَا",           ["aa"],                  ["aa"],                  2.0, "MUNFASIL", False, False, False, False, False, False),
+    (2,  "إِلَٰهَ",       ["i", "aa", "a"],        ["i", "aa"],             4.0, "TABEEI",   False, False, False, False, False, False),
+    (3,  "إِلَّا",        ["i", "aa"],             ["i", "aa"],             3.5, "TABEEI",   False, False, False, False, False, False),
+    (4,  "هُوَ",          ["u", "a"],              ["u"],                   2.0, "NONE",     False, False, False, False, False, False),
+    (5,  "الْحَيُّ",      ["a", "u"],              ["a"],                   2.8, "NONE",     False, False, False, False, False, False),
+    (6,  "الْقَيُّومُ",   ["a", "uu", "u"],        ["a", "uu"],             4.5, "TABEEI",   False, False, False, False, True,  False),
+    (7,  "لَا",           ["aa"],                  ["aa"],                  2.0, "TABEEI",   False, False, False, False, False, False),
+    (8,  "تَأْخُذُهُ",    ["a", "u", "u", "uu"],   ["a", "u", "u"],         4.5, "TABEEI",   False, True,  False, False, True,  True),
+    (9,  "سِنَةٌ",        ["i", "a", "u"],         ["i", "a"],              3.5, "NONE",     True,  False, True,  False, False, False),
+    (10, "وَلَا",         ["a", "aa"],             ["a", "aa"],             3.0, "TABEEI",   False, False, False, False, False, False),
+    (11, "نَوْمٌ",        ["a", "u"],              ["a"],                   3.0, "LEEN",     False, False, False, False, False, False),
+    (12, "لَهُ",          ["a", "uu"],             ["a"],                   3.0, "TABEEI",   False, False, False, False, False, False),
+    (13, "مَا",           ["aa"],                  ["aa"],                  2.0, "TABEEI",   False, False, False, False, False, False),
+    (14, "فِي",           ["i"],                   ["ii"],                  1.2, "NONE",     False, False, False, False, False, False),
+    (15, "السَّمَاوَاتِ", ["a", "aa", "aa", "i"],  ["a", "aa", "aa"],       6.0, "TABEEI",   False, False, True,  False, False, False),
+    (16, "وَمَا",         ["a", "aa"],             ["a", "aa"],             3.0, "TABEEI",   False, False, False, False, False, False),
+    (17, "فِي",           ["i"],                   ["ii"],                  1.2, "NONE",     False, False, False, False, False, False),
+    (18, "الْأَرْضِ",     ["a", "i"],              ["a"],                   3.0, "NONE",     False, False, False, False, True,  True),
+    (19, "مَنْ",          ["a"],                   ["a"],                   2.8, "NONE",     True,  False, False, False, False, False),
+    (20, "ذَا",           ["a"],                   ["aa"],                  1.2, "NONE",     False, True,  False, False, False, False),
+    (21, "الَّذِي",       ["a", "ii"],             ["a", "ii"],             3.5, "TABEEI",   False, True,  False, False, False, False),
+    (22, "يَشْفَعُ",      ["a", "a", "u"],         ["a", "a"],              3.0, "NONE",     False, False, False, True,  False, True),
+    (23, "عِنْدَهُ",      ["i", "a", "uu"],        ["i", "a"],              5.0, "MUNFASIL", True,  False, False, False, False, False),
+    (24, "إِلَّا",        ["i", "aa"],             ["i", "aa"],             3.5, "TABEEI",   False, False, False, False, False, False),
+    (25, "بِإِذْنِهِ",    ["i", "i", "i", "ii"],   ["i", "i", "i"],         4.5, "TABEEI",   False, True,  False, False, False, True),
+    (26, "يَعْلَمُ",      ["a", "a", "u"],         ["a", "a"],              3.0, "NONE",     False, False, False, False, False, True),
+    (27, "مَا",           ["aa"],                  ["aa"],                  2.0, "TABEEI",   False, False, False, False, False, False),
+    (28, "بَيْنَ",        ["a", "a"],              ["a"],                   2.5, "LEEN",     False, False, False, False, False, False),
+    (29, "أَيْدِيهِمْ",   ["a", "ii", "i"],        ["a", "ii", "i"],        4.5, "TABEEI",   False, False, False, False, False, True),
+    (30, "وَمَا",         ["a", "aa"],             ["a", "aa"],             3.0, "TABEEI",   False, False, False, False, False, False),
+    (31, "خَلْفَهُمْ",    ["a", "a", "u"],         ["a", "a", "u"],         3.2, "NONE",     False, False, False, False, True,  True),
+    (32, "وَلَا",         ["a", "aa"],             ["a", "aa"],             3.0, "TABEEI",   False, False, False, False, False, False),
+    (33, "يُحِيطُونَ",    ["u", "ii", "uu", "a"],  ["u", "ii", "uu"],       6.0, "TABEEI",   False, False, False, False, True,  False),
+    (34, "بِشَيْءٍ",      ["i", "a", "i"],         ["i", "a"],              4.0, "NONE",     True,  False, False, True,  False, False),
+    (35, "مِنْ",          ["i"],                   ["i"],                   1.5, "NONE",     False, False, False, False, False, True),
+    (36, "عِلْمِهِ",      ["i", "i", "ii"],        ["i", "i"],              4.0, "MUNFASIL", False, False, False, False, False, True),
+    (37, "إِلَّا",        ["i", "aa"],             ["i", "aa"],             3.5, "TABEEI",   False, False, False, False, False, False),
+    (38, "بِمَا",         ["i", "aa"],             ["i", "aa"],             3.0, "TABEEI",   False, False, False, False, False, False),
+    (39, "شَاءَ",         ["aa", "a"],             ["aa"],                  4.5, "MUTTASIL", False, False, False, True,  False, False),
+    (40, "وَسِعَ",        ["a", "i", "a"],         ["a", "i"],              2.5, "NONE",     False, False, True,  False, False, False),
+    (41, "كُرْسِيُّهُ",   ["u", "i", "u", "u"],    ["u", "i", "u"],         4.0, "NONE",     False, False, True,  False, True,  True),
+    (42, "السَّمَاوَاتِ", ["a", "aa", "aa", "i"],  ["a", "aa", "aa"],       6.0, "TABEEI",   False, False, True,  False, False, False),
+    (43, "وَالْأَرْضَ",   ["a", "a", "a"],         ["a", "a"],              3.5, "NONE",     False, False, False, False, True,  True),
+    (44, "وَلَا",         ["a", "aa"],             ["a", "aa"],             3.0, "TABEEI",   False, False, False, False, False, False),
+    (45, "يَئُودُهُ",     ["a", "uu", "u", "uu"],  ["a", "uu", "u"],        5.5, "TABEEI",   False, False, False, False, False, False),
+    (46, "حِفْظُهُمَا",   ["i", "u", "u", "aa"],   ["i", "u", "u", "aa"],   5.0, "TABEEI",   False, True,  False, False, True,  True),
+    (47, "وَهُوَ",        ["a", "u", "a"],         ["a", "u"],              2.5, "NONE",     False, False, False, False, False, False),
+    (48, "الْعَلِيُّ",    ["a", "i", "u"],         ["a", "i"],              3.5, "NONE",     False, False, False, False, False, False),
+    (49, "الْعَظِيمُ",    ["a", "ii"],             ["a", "ii"],             4.5, "AARED",    False, True,  False, False, True,  False),
+]
+
 
 def get_valid_qps(idx: int, ibtida: bool, waqf: bool, lenient: bool) -> list[str]:
     munfasil = ["اا", "ااا", "اااا", "ااااا"] if lenient else ["اااا"]
@@ -421,9 +484,7 @@ def align_qps_to_ayat_kursi(pred_ph: str, lenient_madd: bool = True, allowed_waq
     return results
 
 
-
 def preprocess_audio(wave, sr=16000):
-    import numpy as np
     if wave.size == 0:
         return wave
     wave = wave.astype(np.float32)
@@ -450,11 +511,16 @@ def preprocess_audio(wave, sr=16000):
     return wave
 
 
-def segment_audio_at_waqf(wave, sr=16000, max_seg_sec=14.0):
-    import numpy as np
-    min_seg_samples = int(sr * 1.2)
+def segment_audio_at_waqf(wave, sr=16000, max_seg_sec=5.5):
+    """
+    Short-Window Context-Breaking Waqf Segmentation:
+    Splits long recitations at natural pauses (>=280ms) AND bounds each window to <=5.5s
+    at local RMS minima so the Wav2Vec2-BERT Transformer cannot use global verse context
+    to auto-correct Tashkeel or Tajweed errors.
+    """
+    min_seg_samples = int(sr * 1.1)
     max_seg_samples = int(sr * max_seg_sec)
-    if wave.size <= int(sr * 10.0):
+    if wave.size <= int(sr * 4.5):
         return [wave]
     frame_len = int(sr * 0.025)
     hop_len = int(sr * 0.010)
@@ -466,7 +532,7 @@ def segment_audio_at_waqf(wave, sr=16000, max_seg_sec=14.0):
     med_rms = float(np.percentile(rms, 65))
     thresh = max(med_rms * 0.12, 0.008)
     is_silent = rms < thresh
-    min_silence_frames = 32
+    min_silence_frames = 28
     cut_samples = []
     run_start = None
     for idx, s in enumerate(is_silent):
@@ -491,17 +557,84 @@ def segment_audio_at_waqf(wave, sr=16000, max_seg_sec=14.0):
             segments.append(wave[prev:])
     final_segments = []
     for seg in segments:
-        if seg.size <= max_seg_samples:
-            final_segments.append(seg)
-        else:
-            mid = seg.size // 2
-            final_segments.append(seg[:mid])
-            final_segments.append(seg[mid:])
+        cur = seg
+        while cur.size > max_seg_samples:
+            # Find lowest energy dip between 2.8s and max_seg_sec
+            s_lo = int(sr * 2.8)
+            s_hi = min(cur.size - int(sr * 1.0), max_seg_samples)
+            if s_hi <= s_lo:
+                mid = cur.size // 2
+                final_segments.append(cur[:mid])
+                cur = cur[mid:]
+            else:
+                f_lo = s_lo // hop_len
+                f_hi = max(f_lo + 1, s_hi // hop_len)
+                seg_rms = [
+                    float(np.mean(cur[f * hop_len : f * hop_len + frame_len] ** 2))
+                    for f in range(f_lo, min(f_hi, (cur.size - frame_len) // hop_len))
+                ]
+                if seg_rms:
+                    best_f = f_lo + int(np.argmin(seg_rms))
+                    cut_pt = best_f * hop_len
+                else:
+                    cut_pt = (s_lo + s_hi) // 2
+                final_segments.append(cur[:cut_pt])
+                cur = cur[cut_pt:]
+        if cur.size > 0:
+            final_segments.append(cur)
     return final_segments if final_segments else [wave]
 
 
+def audit_phoneme_gop_probabilities(
+    word_results: list[dict],
+    pred_ph_probs: list[float],
+    harakat_gop_thresh: float = 0.82,
+    letter_gop_thresh: float = 0.75,
+):
+    """
+    Goodness of Pronunciation (GOP) Token Probability Auditor:
+    When Wav2Vec2-BERT uses verse context to force greedy argmax into outputting the expected
+    phoneme despite an acoustic mismatch (e.g. saying سِنَةً instead of سِنَةٌ), the token's
+    posterior probability drops significantly. This function catches low-confidence tokens.
+    """
+    if not pred_ph_probs:
+        return
+    harakat_names = {'َ': 'الفتحة', 'ُ': 'الضمة', 'ِ': 'الكسرة'}
+    p_cursor = 0
+    n_probs = len(pred_ph_probs)
+    for wr in word_results:
+        heard = wr.get("heard_ph", "")
+        hlen = len(heard)
+        p0, p1 = p_cursor, p_cursor + hlen
+        p_cursor = p1
+        if hlen == 0 or p0 >= n_probs:
+            continue
+        sub_probs = pred_ph_probs[p0 : min(p1, n_probs)]
+        gop_msgs = []
+        for idx_c, (ch, pr) in enumerate(zip(heard, sub_probs)):
+            prob_val = float(pr)
+            if ch in HARAKAT and prob_val < harakat_gop_thresh:
+                h_name = harakat_names.get(ch, ch)
+                gop_msgs.append(
+                    f"اشتباه قوي في التشكيل (ثقة صوتية منخفضة {prob_val * 100:.0f}%): حركة «{h_name}» في «{wr['word']}» لم تُنطق بوضوح أو أُبدلت بحركة أخرى"
+                )
+            elif (ch in MADD_CHARS or ch in "ں۾ڇ") and prob_val < letter_gop_thresh:
+                gop_msgs.append(
+                    f"ضعف في تطبيق حكم التجويد (ثقة صوتية {prob_val * 100:.0f}%) في «{wr['word']}»"
+                )
+            elif ch not in HARAKAT and prob_val < letter_gop_thresh:
+                gop_msgs.append(
+                    f"ضعف أو انحراف في مخرج حرف «{ch}» (ثقة صوتية {prob_val * 100:.0f}%) في «{wr['word']}»"
+                )
+        if gop_msgs:
+            unique_gop = list(dict.fromkeys(gop_msgs))
+            wr["ok"] = False
+            gop_block = "تحقق صوتي احتمالي (GOP):\n• " + "\n• ".join(unique_gop[:3])
+            wr["note"] = (wr["note"] + "\n\n" + gop_block).strip() if wr["note"] else gop_block
+
+
 def audit_sifat_on_alignment(word_results, pred_sifat, ref_sifat, confidence_threshold=0.72):
-    if not pred_sifat or not ref_sifat:
+    if not pred_sifat:
         return
     pos_cursor = 0
     sifa_spans = []
@@ -512,6 +645,7 @@ def audit_sifat_on_alignment(word_results, pred_sifat, ref_sifat, confidence_thr
         pos_cursor = end_c
     CRITICAL_TAFKHEEM_LETTERS = set("صضطظقخغ")
     CRITICAL_MORAQAQ_LETTERS = set("تذسشعحفك")
+    QALQALAH_LETTERS = set("قطبجد")
     p_cursor = 0
     for wr in word_results:
         heard_len = len(wr.get("heard_ph", ""))
@@ -544,11 +678,374 @@ def audit_sifat_on_alignment(word_results, pred_sifat, ref_sifat, confidence_thr
                 itb_prob = float(getattr(itb, "prob", 0.0) or (itb.get("prob", 0.0) if isinstance(itb, dict) else 0.0))
                 if itb_prob >= confidence_threshold and itb_text == "monfateh":
                     sifa_msgs.append(f"خطأ في صفة الحرف (الإطباق): ضعف إطباق اللسان في حرف «{base_char}»")
+            qlq = getattr(s_obj, "qalqla", None) if not isinstance(s_obj, dict) else s_obj.get("qalqla")
+            if qlq is not None:
+                qlq_text = getattr(qlq, "text", None) or (qlq.get("text") if isinstance(qlq, dict) else None)
+                qlq_prob = float(getattr(qlq, "prob", 0.0) or (qlq.get("prob", 0.0) if isinstance(qlq, dict) else 0.0))
+                if qlq_prob >= confidence_threshold:
+                    if qlq_text == "moqalqal" and base_char not in QALQALAH_LETTERS:
+                        sifa_msgs.append(f"خطأ في التجويد (القلقلة): قلقلة الحرف الساكن «{base_char}» في «{wr['word']}» وليس من حروف (قطب جد)")
         if sifa_msgs:
             unique_sifa = list(dict.fromkeys(sifa_msgs))
             wr["ok"] = False
             sifa_block = "خطأ في صفات الحروف والتجويد:\n• " + "\n• ".join(unique_sifa)
             wr["note"] = (wr["note"] + "\n\n" + sifa_block).strip() if wr["note"] else sifa_block
+
+
+def extract_frame_features(wave: np.ndarray, sr: int = 16000) -> dict[str, np.ndarray]:
+    frame_len = int(sr * 0.025)
+    hop_len = int(sr * 0.010)
+    if wave.size < frame_len:
+        wave = np.pad(wave, (0, frame_len - wave.size))
+    n_frames = 1 + (wave.size - frame_len) // hop_len
+    window = np.hamming(frame_len).astype(np.float32)
+    freqs = np.fft.rfftfreq(512, d=1.0 / sr)
+
+    rms = np.zeros(n_frames, dtype=np.float32)
+    zcr = np.zeros(n_frames, dtype=np.float32)
+    e_f1_closed = np.zeros(n_frames, dtype=np.float32)
+    e_f1_open = np.zeros(n_frames, dtype=np.float32)
+    e_f2_damma = np.zeros(n_frames, dtype=np.float32)
+    e_f2_fatha = np.zeros(n_frames, dtype=np.float32)
+    e_f2_kasra = np.zeros(n_frames, dtype=np.float32)
+    e_tafashie = np.zeros(n_frames, dtype=np.float32)
+    e_sibilant = np.zeros(n_frames, dtype=np.float32)
+
+    idx_f1_closed = (freqs >= 240) & (freqs <= 460)
+    idx_f1_open = (freqs >= 580) & (freqs <= 860)
+    idx_f2_damma = (freqs >= 780) & (freqs <= 1150)
+    idx_f2_fatha = (freqs >= 1200) & (freqs <= 1700)
+    idx_f2_kasra = (freqs >= 1450) & (freqs <= 2700)
+    idx_tafashie = (freqs >= 2000) & (freqs <= 3800)
+    idx_sibilant = (freqs >= 4200) & (freqs <= 7600)
+
+    for i in range(n_frames):
+        seg = wave[i * hop_len : i * hop_len + frame_len]
+        rms[i] = np.sqrt(np.mean(seg ** 2) + 1e-12)
+        zcr[i] = np.mean(np.abs(np.diff(np.signbit(seg))))
+
+        raw_spec = np.abs(np.fft.rfft(seg * window, n=512)) ** 2
+        raw_tot = np.sum(raw_spec) + 1e-12
+        e_f1_closed[i] = np.sum(raw_spec[idx_f1_closed]) / raw_tot
+        e_f1_open[i] = np.sum(raw_spec[idx_f1_open]) / raw_tot
+
+        pre = np.append(seg[0], seg[1:] - 0.95 * seg[:-1]) * window
+        pre_spec = np.abs(np.fft.rfft(pre, n=512)) ** 2
+        pre_tot = np.sum(pre_spec) + 1e-12
+        e_f2_damma[i] = np.sum(pre_spec[idx_f2_damma]) / pre_tot
+        e_f2_fatha[i] = np.sum(pre_spec[idx_f2_fatha]) / pre_tot
+        e_f2_kasra[i] = np.sum(pre_spec[idx_f2_kasra]) / pre_tot
+        e_tafashie[i] = np.sum(pre_spec[idx_tafashie]) / pre_tot
+        e_sibilant[i] = np.sum(pre_spec[idx_sibilant]) / pre_tot
+
+    return {
+        "rms": rms,
+        "zcr": zcr,
+        "e_f1_closed": e_f1_closed,
+        "e_f1_open": e_f1_open,
+        "e_f2_damma": e_f2_damma,
+        "e_f2_fatha": e_f2_fatha,
+        "e_f2_kasra": e_f2_kasra,
+        "e_tafashie": e_tafashie,
+        "e_sibilant": e_sibilant,
+    }
+
+
+def classify_vowel_segment(feats: dict[str, np.ndarray], f_start: int, f_end: int) -> str:
+    if f_end <= f_start:
+        return "a"
+    f1_open = float(np.mean(feats["e_f1_open"][f_start:f_end]))
+    f1_closed = float(np.mean(feats["e_f1_closed"][f_start:f_end]))
+    f2_damma = float(np.mean(feats["e_f2_damma"][f_start:f_end]))
+    f2_kasra = float(np.mean(feats["e_f2_kasra"][f_start:f_end]))
+
+    if f1_open > f1_closed * 1.15:
+        return "a"
+    if f2_kasra > f2_damma * 1.10:
+        return "i"
+    return "u"
+
+
+def compute_word_expected_weights(is_waqf_map: set[int]) -> np.ndarray:
+    weights = np.zeros(50, dtype=np.float32)
+    for w in range(50):
+        _, _, wasl_v, waqf_v, _, madd_type, req_ghunnah, interdental, safeer, tafashie, _, _ = WORD_ACOUSTIC_SPECS[w]
+        wq = w in is_waqf_map
+        vowels = waqf_v if wq else wasl_v
+        dur_ms = 0.0
+        if safeer:
+            dur_ms += 75.0
+        elif tafashie:
+            dur_ms += 85.0
+        elif interdental:
+            dur_ms += 70.0
+        for v in vowels:
+            if len(v) >= 2:
+                if madd_type == "MUTTASIL":
+                    dur_ms += 580.0
+                elif madd_type == "MUNFASIL" and not wq:
+                    dur_ms += 420.0
+                else:
+                    dur_ms += 280.0
+            else:
+                dur_ms += 140.0
+        if req_ghunnah and not wq:
+            dur_ms += 240.0
+        weights[w] = dur_ms / 100.0
+    return weights
+
+
+def forced_align_phrase_words(
+    feats: dict[str, np.ndarray],
+    w_start: int,
+    w_end: int,
+    f_start: int,
+    f_end: int,
+    exp_weights: np.ndarray,
+) -> list[tuple[int, int]]:
+    rms = feats["rms"]
+    n_words = w_end - w_start + 1
+    if n_words <= 1:
+        return [(f_start, f_end)]
+
+    phrase_len = f_end - f_start
+    sub_w = exp_weights[w_start : w_end + 1]
+    total_sub_w = float(np.sum(sub_w))
+    exp_lens = [max(4.0, phrase_len * (float(sw) / total_sub_w)) for sw in sub_w]
+    exp_cum = np.cumsum([0.0] + exp_lens)
+
+    INF = 1e9
+    dp = np.full((n_words + 1, phrase_len + 1), INF, dtype=np.float32)
+    back = np.zeros((n_words + 1, phrase_len + 1), dtype=np.int32)
+    dp[0, 0] = 0.0
+
+    max_rms = float(np.max(rms[f_start:f_end])) + 1e-6
+    norm_rms = rms[f_start:f_end] / max_rms
+
+    for k in range(1, n_words + 1):
+        exp_pos = exp_cum[k]
+        exp_len = exp_lens[k - 1]
+        band = max(18, int(phrase_len * 0.22))
+        f_lo = phrase_len if k == n_words else max(k * 4, int(round(exp_pos)) - band)
+        f_hi = phrase_len if k == n_words else min(phrase_len - (n_words - k) * 4, int(round(exp_pos)) + band)
+
+        prev_exp_pos = exp_cum[k - 1]
+        p_lo = 0 if k == 1 else max((k - 1) * 4, int(round(prev_exp_pos)) - band)
+        p_hi = 0 if k == 1 else min(phrase_len, int(round(prev_exp_pos)) + band)
+
+        for f in range(f_lo, f_hi + 1):
+            dip_cost = float(norm_rms[min(f, phrase_len - 1)]) * 10.0 if k < n_words else 0.0
+            best_c = INF
+            best_p = p_lo
+            for p in range(p_lo, min(f - 3, p_hi + 1)):
+                if dp[k - 1, p] >= INF:
+                    continue
+                actual_len = float(f - p)
+                dur_cost = ((actual_len - exp_len) / max(6.0, exp_len * 0.35)) ** 2
+                c = dp[k - 1, p] + dur_cost + dip_cost
+                if c < best_c:
+                    best_c = c
+                    best_p = p
+            dp[k, f] = best_c
+            back[k, f] = best_p
+
+    spans = [None] * n_words
+    cur_f = phrase_len
+    for k in range(n_words, 0, -1):
+        prev_f = int(back[k, cur_f])
+        spans[k - 1] = (f_start + prev_f, f_start + cur_f)
+        cur_f = prev_f
+    return spans
+
+
+def segment_full_recitation_into_50_words(
+    wave: np.ndarray,
+    sr: int = 16000,
+) -> tuple[list[np.ndarray], list[bool], float]:
+    feats = extract_frame_features(wave, sr=sr)
+    rms = feats["rms"]
+    n_frames = len(rms)
+    hop_samples = int(sr * 0.010)
+    if n_frames < 50:
+        return [np.zeros(400, dtype=np.float32) for _ in range(50)], [False] * 50, 105.0
+
+    peak_rms = float(np.percentile(rms, 95))
+    silence_thresh = max(peak_rms * 0.05, 1e-4)
+    is_silent = rms < silence_thresh
+
+    pauses = []
+    run_start = None
+    for i, s in enumerate(is_silent):
+        if s:
+            if run_start is None:
+                run_start = i
+        else:
+            if run_start is not None:
+                dur = i - run_start
+                if run_start > 5 and dur >= 24:
+                    pauses.append((run_start, i, dur))
+                run_start = None
+
+    exp_weights = compute_word_expected_weights(NATURAL_WAQF_SET)
+    cum_weights = np.cumsum(exp_weights)
+    total_weight = float(cum_weights[-1])
+
+    active_frames = np.where(~is_silent)[0]
+    if active_frames.size < 20:
+        return [np.zeros(400, dtype=np.float32) for _ in range(50)], [False] * 50, 105.0
+    first_frame = max(0, int(active_frames[0]))
+    last_frame = min(n_frames, int(active_frames[-1]) + 1)
+
+    pause_frames_total = sum(p[2] for p in pauses if p[0] >= first_frame and p[1] <= last_frame)
+    total_speech_frames = max(50, (last_frame - first_frame) - pause_frames_total)
+
+    phrase_spans = []
+    cur_w = 0
+    cur_f = first_frame
+    spoken_before = 0
+
+    for p_start, p_end, p_dur in pauses:
+        if p_start <= cur_f + 10 or p_end >= last_frame - 10:
+            continue
+        spoken_in_phrase = p_start - cur_f
+        spoken_before += spoken_in_phrase
+        target_cum_w = (spoken_before / float(total_speech_frames)) * total_weight
+        best_w = cur_w
+        best_dist = 1e9
+        for cand_w in range(cur_w, 49):
+            dist = abs(float(cum_weights[cand_w]) - target_cum_w)
+            if cand_w not in VALID_WAQF_WORDS:
+                dist += 8.0
+            if dist < best_dist:
+                best_dist = dist
+                best_w = cand_w
+        phrase_spans.append((cur_w, best_w, cur_f, p_start))
+        cur_w = best_w + 1
+        cur_f = p_end
+        if cur_w >= 50:
+            break
+
+    if cur_w < 50:
+        phrase_spans.append((cur_w, 49, cur_f, last_frame))
+
+    word_waves = [np.zeros(400, dtype=np.float32) for _ in range(50)]
+    is_waqf_list = [False] * 50
+
+    for w_start, w_end, f_start, f_end in phrase_spans:
+        is_waqf_list[w_end] = True
+        w_intervals = forced_align_phrase_words(feats, w_start, w_end, f_start, f_end, exp_weights)
+        for idx_offset, (wf0, wf1) in enumerate(w_intervals):
+            w_idx = w_start + idx_offset
+            s0 = max(0, wf0 * hop_samples)
+            s1 = min(wave.size, wf1 * hop_samples)
+            word_waves[w_idx] = wave[s0:s1]
+
+    ref_2beat_words = [7, 13, 27]
+    unit_ms_list = []
+    for rw in ref_2beat_words:
+        ww = word_waves[rw]
+        if ww.size > 400:
+            wf = extract_frame_features(ww, sr=sr)
+            pk = float(np.max(wf["rms"]))
+            vf = int(np.sum((wf["rms"] > pk * 0.18) & (wf["zcr"] < 0.28)))
+            if vf >= 4:
+                unit_ms_list.append((vf * 10.0) / 2.0)
+    calibrated_harakah_ms = float(np.median(unit_ms_list)) if unit_ms_list else 105.0
+    calibrated_harakah_ms = max(75.0, min(160.0, calibrated_harakah_ms))
+
+    return word_waves, is_waqf_list, calibrated_harakah_ms
+
+
+def audit_single_word_acoustics(
+    word_idx: int,
+    word_wave: np.ndarray,
+    is_waqf: bool,
+    harakah_ms: float = 105.0,
+    lenient_madd: bool = True,
+    sr: int = 16000,
+) -> list[str]:
+    spec = WORD_ACOUSTIC_SPECS[word_idx]
+    _, w_text, wasl_v, waqf_v, min_h, madd_type, req_ghunnah, interdental, safeer, tafashie, tafkheem, _ = spec
+    exp_vowels = waqf_v if is_waqf else wasl_v
+    errors = []
+
+    feats = extract_frame_features(word_wave, sr=sr)
+    n_frames = len(feats["rms"])
+    if n_frames < 5:
+        return ["لم يُلتقط صوت واضح لهذه الكلمة."]
+
+    peak_rms = float(np.max(feats["rms"]))
+    voiced_mask = (feats["rms"] > peak_rms * 0.18) & (feats["zcr"] < 0.28)
+    voiced_frames = int(np.sum(voiced_mask))
+    voiced_ms = voiced_frames * 10.0
+
+    if madd_type == "MUTTASIL":
+        req_ms = harakah_ms * (3.2 if lenient_madd else 3.6)
+        if voiced_ms < req_ms:
+            errors.append(f"خطأ في التجويد (المد الواجب المتصل): قصر مد «{w_text}» ({voiced_ms:.0f}ms) عن مقداره الواجب (٤–٥ حركات)")
+    elif madd_type == "MUNFASIL" and not is_waqf:
+        req_ms = harakah_ms * (1.7 if lenient_madd else 3.2)
+        if voiced_ms < req_ms:
+            errors.append(f"خطأ في التجويد (المد المنفصل / الصلة الكبرى): قصر المد في «{w_text}» عن الحد المعتبر")
+    elif madd_type == "TABEEI" and not is_waqf:
+        min_word_ms = harakah_ms * (min_h * 0.58)
+        if voiced_ms < min_word_ms:
+            errors.append(f"خطأ في التجويد (المد الطبيعي): إسقاط أو قصر حرف المد في «{w_text}»")
+
+    if req_ghunnah and not is_waqf:
+        nasal_frames = int(np.sum((feats["rms"] > peak_rms * 0.12) & (feats["e_f1_closed"] > 0.35) & (feats["e_f1_open"] < 0.20)))
+        nasal_ms = nasal_frames * 10.0
+        if nasal_ms < harakah_ms * 1.15:
+            errors.append(f"خطأ في التجويد (الغنة / الإخفاء / الإدغام): نقص زمن الغنة أو تركها في «{w_text}»")
+
+    if interdental and not safeer:
+        max_sib = float(np.max(feats["e_sibilant"]))
+        if max_sib > 0.38:
+            letter = "الظاء" if ("ظ" in w_text) else "الذال"
+            errors.append(f"خطأ في مخرج الحرف: نطقت {letter} بحرف صفير (زاي/سين) في «{w_text}» — احرص على إخراج طرف اللسان")
+
+    if tafashie and not safeer:
+        max_sib = float(np.max(feats["e_sibilant"]))
+        max_taf = float(np.max(feats["e_tafashie"]))
+        if max_sib > 0.38 and max_sib > max_taf * 1.45:
+            errors.append(f"خطأ في مخرج الحرف وصفته: إبدال الشين سيناً (ضعف التفشي وزيادة الصفير) في «{w_text}»")
+
+    active_idx = np.where(voiced_mask)[0]
+    if active_idx.size >= 6 and len(exp_vowels) >= 1:
+        weights = []
+        for v in exp_vowels:
+            if len(v) >= 2:
+                weights.append(4.0 if madd_type == "MUTTASIL" else (3.0 if (madd_type == "MUNFASIL" and not is_waqf) else 2.0))
+            else:
+                weights.append(1.0)
+        gh_w = 1.6 if (req_ghunnah and not is_waqf) else 0.0
+        vowel_sum = sum(weights)
+        total_w = vowel_sum + gh_w
+        n_act = active_idx.size
+        v_end_idx = max(2, min(n_act, int(round(n_act * (vowel_sum / total_w)))))
+        first_end = max(2, min(v_end_idx, int(round(n_act * (weights[0] / total_w)))))
+        last_start = max(0, min(v_end_idx - 2, int(round(n_act * ((vowel_sum - weights[-1]) / total_w)))))
+        v_names = {"a": "الفتحة", "u": "الضمة", "i": "الكسرة"}
+        first_base = exp_vowels[0][0]
+        pred_first = classify_vowel_segment(feats, int(active_idx[0]), int(active_idx[first_end - 1]) + 1)
+        if pred_first != first_base:
+            errors.append(
+                f"خطأ في التشكيل (أول الكلمة): نطقت «{v_names[pred_first]}» بدلاً من «{v_names[first_base]}» في أول «{w_text}»"
+            )
+        if len(exp_vowels) >= 2:
+            last_base = exp_vowels[-1][0]
+            pred_last = classify_vowel_segment(feats, int(active_idx[last_start]), int(active_idx[v_end_idx - 1]) + 1)
+            if pred_last != last_base:
+                errors.append(
+                    f"خطأ في التشكيل (آخر الكلمة / الإعراب): نطقت «{v_names[pred_last]}» بدلاً من «{v_names[last_base]}» في آخر «{w_text}»"
+                )
+
+    if tafkheem and active_idx.size >= 4:
+        min_kasra_ratio = float(np.min(feats["e_f2_kasra"][active_idx] / (feats["e_f2_damma"][active_idx] + 1e-5)))
+        if min_kasra_ratio > 1.85:
+            errors.append(f"خطأ في صفات الحروف (التفخيم): ترقيق حرف مفخم في «{w_text}»")
+
+    return errors
 
 
 def create_fastapi_app():
@@ -558,7 +1055,7 @@ def create_fastapi_app():
     from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
     from fastapi.responses import JSONResponse
 
-    app = FastAPI(title="Rafiq Precision Quranic Auditor Server", version="4.0.0")
+    app = FastAPI(title="Rafiq Precision Quranic Auditor Server", version="5.0.0")
     state = {"muaalem": None}
 
     def get_model():
@@ -578,7 +1075,7 @@ def create_fastapi_app():
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "engine": "rafiq-v4-precise"}
+        return {"status": "ok", "engine": "rafiq-v5-hybrid-acoustic-gop"}
 
     @app.post("/correct-recitation")
     async def correct_recitation(
@@ -616,13 +1113,24 @@ def create_fastapi_app():
         uthmani_ref = Aya(sura, aya).get().uthmani
         moshaf = MoshafAttributes(rewaya="hafs", madd_monfasel_len=4, madd_mottasel_len=4, madd_mottasel_waqf=4, madd_aared_len=4)
         full_ref_out = quran_phonetizer(uthmani_ref, moshaf, remove_spaces=True)
-        segments = segment_audio_at_waqf(wave, sr=16000)
+        segments = segment_audio_at_waqf(wave, sr=16000, max_seg_sec=5.5)
         pred_ph_parts = []
+        pred_ph_probs = []
         pred_sifat_all = []
         for seg in segments:
             outs = muaalem([seg], [full_ref_out], sampling_rate=16000)
             out = outs[0]
-            pred_ph_parts.append(out.phonemes.text)
+            txt = out.phonemes.text
+            pred_ph_parts.append(txt)
+            raw_probs = getattr(out.phonemes, "probs", None)
+            if raw_probs is not None:
+                p_list = [float(x) for x in raw_probs]
+                if len(p_list) >= len(txt):
+                    pred_ph_probs.extend(p_list[:len(txt)])
+                else:
+                    pred_ph_probs.extend(p_list + [1.0] * (len(txt) - len(p_list)))
+            else:
+                pred_ph_probs.extend([1.0] * len(txt))
             if getattr(out, "sifat", None):
                 pred_sifat_all.extend(out.sifat)
         predicted_phonemes = "".join(pred_ph_parts)
@@ -632,7 +1140,26 @@ def create_fastapi_app():
             word_results = align_qps_to_ayat_kursi(predicted_phonemes, lenient_madd=lenient)
             if word_results is None:
                 raise HTTPException(status_code=404, detail="تعذّرت مطابقة التلاوة مع آية الكرسي")
+            # Layer 2A: 10-Level Sifat & Qalqalah Verification
             audit_sifat_on_alignment(word_results, pred_sifat_all, getattr(full_ref_out, "sifat", []))
+            # Layer 2B: Goodness of Pronunciation (GOP) Token Probability Verification
+            audit_phoneme_gop_probabilities(word_results, pred_ph_probs)
+            # Layer 2C: Physical Acoustic-Phonetic & Formant (F1/F2) Verification
+            word_waves, is_waqf_list, cal_h = segment_full_recitation_into_50_words(wave, sr=16000)
+            for w_idx, wr in enumerate(word_results):
+                ac_errs = audit_single_word_acoustics(
+                    w_idx,
+                    word_waves[w_idx],
+                    is_waqf=wr.get("waqf", is_waqf_list[w_idx]),
+                    harakah_ms=cal_h,
+                    lenient_madd=lenient,
+                    sr=16000,
+                )
+                if ac_errs:
+                    wr["ok"] = False
+                    ac_block = "فحص صوتي فيزيائي (Formants F1/F2 & Madd & Tajweed):\n• " + "\n• ".join(ac_errs)
+                    wr["note"] = (wr["note"] + "\n\n" + ac_block).strip() if wr["note"] else ac_block
+
             uth_words = uthmani_ref.split(" ")
             w_char_starts = []
             c_pos = 0
