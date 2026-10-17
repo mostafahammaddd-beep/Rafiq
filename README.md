@@ -1,3 +1,7 @@
 # Rafiq - رَفِيق
-Upload ALL files in this folder (including the hidden .github folder) to the ROOT of the repo.
-Then open Actions > Build APK > download Rafiq-APK from Artifacts.
+1. ارفع كل الملفات (بما فيها مجلد .github وملف app/debug.keystore) إلى جذر المستودع.
+2. افتح Actions > Build APK وانتظر الاكتمال.
+3. حمّل الـ APK من **Releases** (مباشرةً من الجوال) أو من Artifacts > Rafiq-APK.
+
+ملاحظة: الملف app/debug.keystore يثبّت توقيع التطبيق، فتُثبَّت كل نسخة جديدة فوق السابقة.
+إن كانت عندك نسخة قديمة بتوقيع مختلف فاحذفها مرة واحدة فقط قبل تثبيت هذه النسخة.
