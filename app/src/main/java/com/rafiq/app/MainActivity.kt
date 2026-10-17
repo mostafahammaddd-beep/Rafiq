@@ -69,6 +69,9 @@ const val AUDIO_URL = "https://everyayah.com/data/Minshawy_Murattal_128kbps/0022
 // في القراءة الموجَّهة: أقصى عدد كلمات يُسمح بها خطأ تعرُّف الصوت قبل رفض القراءة
 const val GUIDED_TOLERANCE = 2
 
+// الوضع الدقيق (فحص الفونيمات عبر الخادم): لا تُقبل أي كلمة بها خطأ
+const val PRECISE_TOLERANCE = 0
+
 val TIPS: Map<Int, String> = mapOf(
     0 to "تفخيم اللام في لفظ الجلالة، مع شدّ اللام وضمّ الهاء.",
     1 to "مدّ طبيعي (حركتان) في «لا».",
@@ -312,6 +315,19 @@ class Engine(private val ctx: Context) {
     val states = mutableStateListOf<WS>().apply { repeat(WORDS.size) { add(WS.PENDING) } }
     val heard = Array(WORDS.size) { "" }
 
+    // ===== الوضع الدقيق: صوت خام ← خادم يحلّل الفونيمات (حروف + تشكيل + تجويد) =====
+    val notes = Array(WORDS.size) { "" }
+    var serverUrl by mutableStateOf(
+        ctx.getSharedPreferences("rafiq", Context.MODE_PRIVATE).getString("server", "") ?: ""
+    )
+    var lenientMadd by mutableStateOf(true)
+    var recording by mutableStateOf(false)
+    var analyzing by mutableStateOf(false)
+    var lastRaw by mutableStateOf("")
+    private val recorder = PcmRecorder()
+    private var auditId = 0
+    val precise: Boolean get() = serverUrl.isNotBlank()
+
     private val h = Handler(Looper.getMainLooper())
     private var rec: SpeechRecognizer? = null
     private var player: MediaPlayer? = null
@@ -331,28 +347,39 @@ class Engine(private val ctx: Context) {
     fun startCycle() { counter = target; goGuided() }
 
     private fun resetAttempt() {
-        for (i in states.indices) { states[i] = WS.PENDING; heard[i] = ""; beeped[i] = false }
-        base = 0; sBase = 0; lastR = null; current = 0
+        auditId++
+        if (recording) { recording = false; recorder.cancel() }
+        analyzing = false
+        for (i in states.indices) { states[i] = WS.PENDING; heard[i] = ""; notes[i] = ""; beeped[i] = false }
+        base = 0; sBase = 0; lastR = null; current = if (precise) -1 else 0
         lastActivity = SystemClock.elapsedRealtime()
     }
 
     fun goGuided() {
         stopRec(); stopAudio(); h.removeCallbacksAndMessages(null)
         resetAttempt(); phase = Phase.GUIDED
-        status = "اقرأ الآية بصوتك…"; startRec()
+        if (precise) {
+            status = "اضغط «ابدأ التسجيل» ثم اقرأ الآية كاملة بصوتك"
+        } else {
+            status = "اقرأ الآية بصوتك…"; startRec()
+        }
     }
 
     fun goRecite() {
         stopRec(); stopAudio(); h.removeCallbacksAndMessages(null)
         resetAttempt(); phase = Phase.RECITE
-        status = "سَمِّع الآية غيباً…"; startRec(); tick()
+        if (precise) {
+            status = "اضغط «ابدأ التسجيل» ثم سمِّع الآية غيباً"
+        } else {
+            status = "سَمِّع الآية غيباً…"; startRec(); tick()
+        }
     }
 
     fun restartAttempt() {
         stopRec(); stopAudio(); h.removeCallbacksAndMessages(null)
         resetAttempt()
-        status = "اقرأ الآية بصوتك…"
-        if (phase == Phase.GUIDED) startRec()
+        status = if (precise) "اضغط «ابدأ التسجيل» ثم اقرأ الآية كاملة" else "اقرأ الآية بصوتك…"
+        if (phase == Phase.GUIDED && !precise) startRec()
     }
 
     fun finish() {
@@ -364,7 +391,9 @@ class Engine(private val ctx: Context) {
 
     fun explain(i: Int): String {
         val sb = StringBuilder()
-        if (states[i] == WS.HINT) {
+        if (notes[i].isNotEmpty()) {
+            sb.append(notes[i])
+        } else if (states[i] == WS.HINT) {
             sb.append("نسيتَ هذه الكلمة فلُقِّنتَها. أعد حفظ موضعها جيداً.")
         } else if (heard[i].isEmpty()) {
             sb.append("لم أسمع هذه الكلمة منك (قد تكون تركتَها، أو لم يلتقطها الميكروفون).")
@@ -503,7 +532,7 @@ class Engine(private val ctx: Context) {
         stopRec()
         val bad = states.count { it == WS.WRONG }
         val my = session
-        if (bad <= GUIDED_TOLERANCE) {
+        if (bad <= (if (precise) PRECISE_TOLERANCE else GUIDED_TOLERANCE)) {
             counter = (counter - 1).coerceAtLeast(0)
             if (counter == 0) {
                 status = "أحسنت! ننتقل إلى التسميع…"
@@ -513,8 +542,12 @@ class Engine(private val ctx: Context) {
                 again(1300L)
             }
         } else {
-            status = "لم تُحتسب القراءة: $bad كلمة بها خطأ (بالأحمر). أعد القراءة من البداية."
-            again(3200L)
+            if (precise) {
+                status = "لم تُحتسب القراءة: $bad كلمة بها خطأ (بالأحمر). اضغط على الكلمة الحمراء لمعرفة الخطأ، ثم أعد التسجيل."
+            } else {
+                status = "لم تُحتسب القراءة: $bad كلمة بها خطأ (بالأحمر). أعد القراءة من البداية."
+                again(3200L)
+            }
         }
     }
 
@@ -522,22 +555,80 @@ class Engine(private val ctx: Context) {
         val my = session
         h.postDelayed({
             if (my == session && phase == Phase.GUIDED) {
-                resetAttempt(); status = "اقرأ الآية بصوتك…"; startRec()
+                resetAttempt()
+                if (precise) {
+                    status = "اضغط «ابدأ التسجيل» للقراءة التالية"
+                } else {
+                    status = "اقرأ الآية بصوتك…"; startRec()
+                }
             }
         }, ms)
     }
 
+    fun saveServer(u: String) {
+        serverUrl = u.trim()
+        ctx.getSharedPreferences("rafiq", Context.MODE_PRIVATE).edit().putString("server", serverUrl).apply()
+    }
+
+    /** بدء/إنهاء تسجيل الصوت الخام ثم إرساله للفحص الدقيق. */
+    fun toggleRecord() {
+        if (analyzing || !precise) return
+        if (!recording) {
+            stopAudio()
+            resetAttempt()
+            if (recorder.start()) {
+                recording = true
+                status = "جارٍ التسجيل… اقرأ بصوت واضح ثم اضغط «أنهِ وافحص»"
+            } else {
+                status = "تعذّر تشغيل الميكروفون"
+            }
+        } else {
+            recording = false
+            val pcm = recorder.stop()
+            if (pcm.size < RemoteAuditor.SAMPLE_RATE * 2 * 2) {
+                status = "التسجيل قصير جداً، أعد المحاولة"
+                return
+            }
+            analyzing = true
+            status = "جارٍ الفحص الدقيق… قد يستغرق عدة ثوانٍ"
+            val id = ++auditId
+            val url = serverUrl
+            val len = lenientMadd
+            Thread {
+                val res = RemoteAuditor.audit(url, pcm, 2, 255, WORDS.size, len)
+                h.post { applyAudit(res, id) }
+            }.start()
+        }
+    }
+
+    private fun applyAudit(res: RemoteAuditor.AuditResult, id: Int) {
+        if (id != auditId) return
+        analyzing = false
+        lastRaw = res.raw
+        if (res.error != null) {
+            status = res.error + " — اضغط «ابدأ التسجيل» للمحاولة من جديد."
+            return
+        }
+        for (i in WORDS.indices) {
+            val w = res.words[i]
+            states[i] = if (w.ok) WS.OK else WS.WRONG
+            notes[i] = w.note
+            heard[i] = w.heard
+        }
+        if (phase == Phase.RECITE) finish() else if (phase == Phase.GUIDED) attemptDone()
+    }
+
     fun toggleAudio() {
-        if (playing) { stopAudio(); if (phase == Phase.GUIDED) startRec(); return }
+        if (playing) { stopAudio(); if (phase == Phase.GUIDED && !precise) startRec(); return }
         stopRec(); playing = true
         player = MediaPlayer().apply {
             setAudioAttributes(AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
             setDataSource(AUDIO_URL)
             setOnPreparedListener { it.start() }
-            setOnCompletionListener { stopAudio(); if (phase == Phase.GUIDED) startRec() }
+            setOnCompletionListener { stopAudio(); if (phase == Phase.GUIDED && !precise) startRec() }
             setOnErrorListener { _, _, _ ->
                 stopAudio(); status = "تعذّر تشغيل الصوت (تحقق من الإنترنت)"
-                if (phase == Phase.GUIDED) startRec()
+                if (phase == Phase.GUIDED && !precise) startRec()
                 true
             }
             prepareAsync()
@@ -546,7 +637,7 @@ class Engine(private val ctx: Context) {
 
     private fun stopAudio() { player?.release(); player = null; playing = false }
     private fun stopRec() { session++; rec?.destroy(); rec = null }
-    fun release() { h.removeCallbacksAndMessages(null); stopRec(); stopAudio(); tone?.release() }
+    fun release() { h.removeCallbacksAndMessages(null); stopRec(); stopAudio(); recorder.cancel(); tone?.release() }
 }
 
 val Bg = Color(0xFF0F2B2A); val CardC = Color(0xFF173E3B); val Gold = Color(0xFFD4AF37)
@@ -604,7 +695,7 @@ fun VerseCard(e: Engine, result: Boolean, onWord: (Int) -> Unit) {
                         val glow = if (isCur) {
                             Modifier.background(Gold.copy(alpha = 0.12f + 0.25f * a), RoundedCornerShape(12.dp))
                         } else Modifier
-                        val tap = if (result && (s == WS.WRONG || s == WS.HINT)) {
+                        val tap = if ((result || e.precise) && (s == WS.WRONG || s == WS.HINT)) {
                             Modifier.clickable { onWord(i) }
                         } else Modifier
                         Box(
@@ -669,6 +760,31 @@ fun App() {
                     Switch(checked = e.showAll, onCheckedChange = { e.showAll = it })
                     Text("إظهار الآية كاملة أثناء التسميع", color = Cream, fontSize = 15.sp)
                 }
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = e.serverUrl,
+                    onValueChange = { e.saveServer(it) },
+                    label = { Text("عنوان خادم الفحص الدقيق", color = Cream) },
+                    placeholder = { Text("https://example.hf.space", color = Cream.copy(alpha = 0.4f)) },
+                    textStyle = TextStyle(color = Cream, fontSize = 15.sp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (e.precise) "الوضع: فحص دقيق للحروف والتشكيل والتجويد (على مستوى الفونيمات)"
+                    else "الوضع: تقريبي — لا يلتقط التشكيل ولا التجويد ولا الحروف المتقاربة. أدخل عنوان الخادم للفحص الدقيق.",
+                    color = if (e.precise) Green else Orange,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
+                )
+                if (e.precise) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Switch(checked = e.lenientMadd, onCheckedChange = { e.lenientMadd = it })
+                        Text("قبول الأطوال المعتبرة للمدود الفرعية (منفصل ٢–٥، متصل ٤–٦)", color = Cream, fontSize = 13.sp)
+                    }
+                }
                 Spacer(Modifier.height(24.dp))
                 Button(
                     onClick = {
@@ -683,13 +799,17 @@ fun App() {
             Phase.GUIDED -> {
                 Text("القراءة الموجَّهة", color = Gold, fontSize = 18.sp)
                 Spacer(Modifier.height(10.dp))
-                VerseCard(e, false) { }
+                VerseCard(e, false) { dialog = e.explain(it) }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { e.toggleAudio() }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
+                    Button(onClick = { e.toggleAudio() }, enabled = !e.recording && !e.analyzing, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) {
                         Text(if (e.playing) "إيقاف الصوت" else "استمع للشيخ المنشاوي")
                     }
                     OutlinedButton(onClick = { e.restartAttempt() }) { Text("ابدأ من أول الآية", color = Cream) }
+                }
+                if (e.precise) {
+                    Spacer(Modifier.height(10.dp))
+                    RecordButton(e)
                 }
                 Spacer(Modifier.height(14.dp))
                 Box(Modifier.size(84.dp).clip(CircleShape).background(Gold), contentAlignment = Alignment.Center) {
@@ -709,7 +829,7 @@ fun App() {
                         Text("🎙", fontSize = 32.sp)
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("التسميع الذكي — بدون لمس الهاتف", color = Cream, fontSize = 14.sp)
+                    Text(if (e.precise) e.status else "التسميع الذكي — بدون لمس الهاتف", color = Cream, fontSize = 14.sp, textAlign = TextAlign.Center)
                 } else if (e.success()) {
                     Box(Modifier.size(100.dp).clip(CircleShape).background(Green), contentAlignment = Alignment.Center) {
                         Text("✔", color = Bg, fontSize = 56.sp, fontWeight = FontWeight.Bold)
@@ -725,7 +845,11 @@ fun App() {
                 VerseCard(e, result) { dialog = e.explain(it) }
                 Spacer(Modifier.height(18.dp))
                 if (!result) {
-                    Button(onClick = { e.finish() }, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("إيقاف التسجيل") }
+                    if (e.precise) {
+                        RecordButton(e)
+                    } else {
+                        Button(onClick = { e.finish() }, colors = ButtonDefaults.buttonColors(containerColor = Red)) { Text("إيقاف التسجيل") }
+                    }
                 } else if (e.success()) {
                     Button(onClick = { e.phase = Phase.SETUP }, colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Bg)) { Text("دورة جديدة") }
                 } else {
@@ -736,6 +860,18 @@ fun App() {
                 }
             }
         }
+        if (e.precise && e.phase == Phase.RESULT) {
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "الفحص آلي وقد يخطئ (يفوته بعض الأخطاء وقد ينبّه خطأً)، ولا يغني عن معلّم مُجاز.",
+                color = Cream.copy(alpha = 0.6f), fontSize = 12.sp, textAlign = TextAlign.Center
+            )
+            if (e.lastRaw.isNotEmpty()) {
+                TextButton(onClick = { dialog = e.lastRaw.take(3500) }) {
+                    Text("عرض الرد الخام (للتشخيص)", color = Cream.copy(alpha = 0.5f), fontSize = 12.sp)
+                }
+            }
+        }
         Spacer(Modifier.height(24.dp))
     }
 
@@ -743,7 +879,8 @@ fun App() {
         AlertDialog(
             onDismissRequest = { dialog = null },
             confirmButton = { TextButton(onClick = { dialog = null }) { Text("حسناً") } },
-            title = { Text("تنبيه") }, text = { Text(it) }
+            title = { Text("تنبيه") },
+            text = { Box(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) { Text(it) } }
         )
     }
 }
@@ -752,5 +889,20 @@ fun App() {
 fun RoundBtn(label: String, onClick: () -> Unit) {
     Box(Modifier.size(56.dp).clip(CircleShape).background(Gold).clickable { onClick() }, contentAlignment = Alignment.Center) {
         Text(label, color = Bg, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun RecordButton(e: Engine) {
+    Button(
+        onClick = { e.toggleRecord() },
+        enabled = !e.analyzing,
+        colors = ButtonDefaults.buttonColors(containerColor = if (e.recording) Red else Green, contentColor = Bg),
+        modifier = Modifier.height(50.dp)
+    ) {
+        Text(
+            if (e.recording) "أنهِ وافحص" else if (e.analyzing) "جارٍ الفحص…" else "ابدأ التسجيل",
+            fontSize = 17.sp, fontWeight = FontWeight.Bold
+        )
     }
 }
