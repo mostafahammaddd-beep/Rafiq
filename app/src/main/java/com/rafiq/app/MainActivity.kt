@@ -66,56 +66,98 @@ val WORDS: List<String> = listOf(
 // الشيخ المنشاوي - آية الكرسي (2:255)
 const val AUDIO_URL = "https://everyayah.com/data/Minshawy_Murattal_128kbps/002255.mp3"
 
-// في القراءة الموجَّهة: أقصى عدد كلمات يُسمح بها خطأ تعرُّف الصوت قبل رفض القراءة
-const val GUIDED_TOLERANCE = 2
-
-// الوضع الدقيق (فحص الفونيمات عبر الخادم): لا تُقبل أي كلمة بها خطأ
+// عدم التسامح مع أي كلمة خاطئة سواء في القراءة الموجهة أو التسميع أو الفحص الدقيق (القرآن أمانة)
+const val GUIDED_TOLERANCE = 0
 const val PRECISE_TOLERANCE = 0
 
+// أحكام التجويد والتشكيل لجميع كلمات آية الكرسي (0..49) وصلاً ووقفاً
 val TIPS: Map<Int, String> = mapOf(
-    0 to "تفخيم اللام في لفظ الجلالة، مع شدّ اللام وضمّ الهاء.",
-    1 to "مدّ طبيعي (حركتان) في «لا».",
-    2 to "الألف الخنجرية مدّ طبيعي، وفتح الهاء.",
-    3 to "شدّ اللام في «إلّا».",
-    4 to "ضمّ الهاء وفتح الواو دون مدّ.",
-    5 to "شدّ الياء مع ضمّها.",
-    6 to "شدّ الياء، ثم مدّ الواو مدّاً طبيعياً، وضمّ الميم.",
-    8 to "همزة ساكنة، وضمّ الذال، وصلة الهاء بمدّ حركتين.",
-    9 to "كسر السين وتنوين الضمّ.",
-    11 to "الواو لينة بعد الفتحة، دون مدّ.",
-    12 to "صلة هاء الضمير بمدّ حركتين.",
-    15 to "شدّ السين، ومدّ الألفين مدّاً طبيعياً.",
-    21 to "شدّ الذال، ومدّ الياء مدّاً طبيعياً.",
-    22 to "سكون الشين، وفتح الفاء، وضمّ العين.",
-    23 to "صلة الهاء مع مدّ منفصل قبل همزة «إلّا».",
-    25 to "كسر الهاء وصلتها بالياء.",
-    29 to "مدّ الياء بعد الدال، وكسر الهاء، وضمّ الميم.",
-    33 to "مدّ الياء ومدّ الواو (طبيعيان).",
-    34 to "نطق الهمزة المكسورة بعد الياء مع تنوين الكسر.",
-    39 to "مدّ متصل (٤–٥ حركات) لوجود الهمزة بعد الألف.",
-    41 to "شدّ الياء مع ضمّها.",
-    45 to "نطق الهمزة المضمومة ثم مدّ الواو مدّاً طبيعياً.",
-    46 to "سكون الفاء، وضمّ الظاء، ومدّ الألف في «هما».",
-    48 to "شدّ الياء مع ضمّها.",
-    49 to "تفخيم الظاء، ومدّ الياء مدّاً طبيعياً."
+    0 to "تفخيم اللام في لفظ الجلالة «اللَّهُ» مع تشديدها، ومدّها مدّاً طبيعياً، وضمّ الهاء وصلاً وتسكينها وقفاً.",
+    1 to "مدّ منفصل جائز (٢ أو ٤ أو ٥ حركات) وصلاً قبل همزة «إله»، ومدّ طبيعي حركتان وقفاً.",
+    2 to "تحقيق الهمزة المكسورة، ومدّ الألف الخنجرية مدّاً طبيعياً (حركتان)، وفتح الهاء وصلاً وتسكينها وقفاً.",
+    3 to "تحقيق الهمزة المكسورة، وتشديد اللام، ومدّ الألف مدّاً طبيعياً حركتين.",
+    4 to "ضمّ الهاء وفتح الواو دون مدّ وصلاً، وتسكين الواو وقفاً.",
+    5 to "إظهار اللام القمرية، وترقيق الحاء، وتشديد الياء مع ضمّها وصلاً والنبر عليها بالسكون وقفاً.",
+    6 to "تفخيم القاف، وتشديد الياء مع ضمّها، ومدّ الواو طبيعياً وصلاً أو عارضاً للسكون (٢/٤/٦) وقفاً مع إسكان الميم.",
+    7 to "مدّ طبيعي بالألف بمقدار حركتين.",
+    8 to "تحقيق الهمزة الساكنة دون قلقلة، وتفخيم الخاء المضمومة، وضمّ الذال مع إخراج طرف اللسان، ومدّ صلة صغرى للهاء (حركتان) وصلاً وحذف الصلة بالسكون وقفاً.",
+    9 to "كسر السين، وفتح النون، وتنوين الضمّ في التاء المربوطة يُدغم بغنة كاملة في واو «ولا» وصلاً، وتنقلب التاء هاءً ساكنة وقفاً.",
+    10 to "فتح الواو واللام، ومدّ الألف مدّاً طبيعياً حركتين.",
+    11 to "واو ليّنة ساكنة بعد فتح؛ وصلاً يُدغم التنوين إدغاماً كاملاً بغير غنة في لام «له»، ووقفاً مدّ لين عارض للسكون (٢/٤/٦) مع إسكان الميم.",
+    12 to "فتح اللام، وضمّ الهاء مع مدّ صلة صغرى (حركتان) وصلاً، وإسكان الهاء وقفاً.",
+    13 to "فتح الميم ومدّ الألف مدّاً طبيعياً حركتين.",
+    14 to "كسر الفاء؛ وصلاً تُحذف ياء المدّ منعاً لالتقاء الساكنين قبل السين المشددة في «السماوات»، ووقفاً تُمدّ حركتين.",
+    15 to "إدغام اللام الشمسية في السين المشددة مع صفيرها، ومدّ الألفين مدّاً طبيعياً، وكسر التاء وصلاً وإسكانها بالهمس وقفاً.",
+    16 to "فتح الواو والميم، ومدّ الألف مدّاً طبيعياً حركتين.",
+    17 to "كسر الفاء؛ وصلاً تُحذف ياء المدّ لالتقاء الساكنين قبل اللام القمرية في «الأرض»، ووقفاً تُمدّ حركتين.",
+    18 to "إظهار اللام القمرية، وتحقيق الهمزة المرققة، وتفخيم الراء، وتفخيم الضاد وإطباقها مع كسرها وصلاً واستطالتها ساكنةً وقفاً.",
+    19 to "فتح الميم، وإخفاء النون الساكنة عند الذال بغنة مرققة بمقدار حركتين وصلاً.",
+    20 to "إخراج طرف اللسان في الذال؛ وصلاً تُحذف الألف لالتقاء الساكنين قبل «الذي»، ووقفاً تُمدّ حركتين.",
+    21 to "تشديد اللام وكسر الذال مع إخراج طرف اللسان، ومدّ الياء مدّاً طبيعياً حركتين.",
+    22 to "فتح الياء، وهمس الشين الساكنة وتفشّيها، وفتح الفاء، وضمّ العين وصلاً وتوسّطها ساكنةً وقفاً.",
+    23 to "كسر العين، وإخفاء النون الساكنة عند الدال بغنة مرققة، ومدّ صلة كبرى للهاء (٢–٥ حركات) وصلاً قبل همزة «إلا»، وإسكان الهاء وقفاً.",
+    24 to "تحقيق الهمزة المكسورة، وتشديد اللام، ومدّ الألف مدّاً طبيعياً حركتين.",
+    25 to "كسر الباء والهمزة، وإخراج طرف اللسان في الذال الساكنة برخاوة دون قلقلة، وكسر النون والهاء مع صلة صغرى وصلاً وإسكان الهاء دون صلة وقفاً.",
+    26 to "فتح الياء، وتوسّط العين الساكنة من غير قلقلة، وفتح اللام، وضمّ الميم وصلاً وإسكانها وقفاً.",
+    27 to "فتح الميم ومدّ الألف مدّاً طبيعياً حركتين.",
+    28 to "فتح الباء، وياء ليّنة ساكنة، وفتح النون وصلاً أو مدّ لين عارض مع إسكان النون وقفاً.",
+    29 to "تحقيق الهمزة المفتوحة، وياء ليّنة ساكنة، ومدّ الياء بعد الدال حركتين، وكسر الهاء، وإظهار الميم الساكنة إظهاراً شفوياً قبل الواو.",
+    30 to "فتح الواو والميم، ومدّ الألف مدّاً طبيعياً حركتين.",
+    31 to "تفخيم الخاء المفتوحة، وترقيق اللام الساكنة والفاء المفتوحة، وضمّ الهاء، وإظهار الميم الساكنة إظهاراً شفوياً.",
+    32 to "فتح الواو واللام، ومدّ الألف مدّاً طبيعياً حركتين.",
+    33 to "ضمّ الياء، وكسر الحاء وترقيقها مع مدّ الياء، وتفخيم الطاء المضمومة وإطباقها مع مدّ الواو، وفتح النون وصلاً وإسكانها وقفاً.",
+    34 to "كسر الباء، وفتح الشين، وياء ليّنة ساكنة، وهمزة منوّنة بالكسر تُدغم بغنة كاملة في ميم «من» وصلاً وتُسكّن بالنبر وقفاً.",
+    35 to "كسر الميم، وإظهار النون الساكنة إظهاراً حلقياً عند العين من غير غنة زائدة.",
+    36 to "كسر العين واللام الساكنة المظهرة، وكسر الميم والهاء مع مدّ صلة كبرى بالياء (٢–٥ حركات) وصلاً قبل همزة «إلا»، وإسكان الهاء وقفاً.",
+    37 to "تحقيق الهمزة المكسورة، وتشديد اللام، ومدّ الألف مدّاً طبيعياً حركتين.",
+    38 to "كسر الباء، وفتح الميم، ومدّ الألف مدّاً طبيعياً حركتين.",
+    39 to "مدّ واجب متصل (٤–٥ حركات وصلاً، و٤–٦ حركات وقفاً)، وفتح الهمزة وصلاً وإسكانها محققةً وقفاً.",
+    40 to "فتح الواو، وكسر السين وترقيقها، وفتح العين وصلاً وإسكانها وقفاً.",
+    41 to "ضمّ الكاف، وتفخيم الراء الساكنة، وكسر السين، وتشديد الياء مع ضمّها، وضمّ الهاء دون صلة وصلاً (لالتقاء الساكنين مع السماوات) وإسكانها وقفاً.",
+    42 to "إدغام اللام الشمسية في السين المشددة، ومدّ الألفين مدّاً طبيعياً، وكسر التاء وصلاً وإسكانها بالهمس وقفاً.",
+    43 to "فتح الواو، وإظهار اللام القمرية، وتحقيق الهمزة المرققة، وتفخيم الراء والضاد مع فتح الضاد وصلاً وإسكانها بالاستطالة وقفاً.",
+    44 to "فتح الواو واللام، ومدّ الألف مدّاً طبيعياً حركتين.",
+    45 to "فتح الياء، وضمّ الهمزة ومدّها بالواو مدّ بدل طبيعياً (حركتان)، وضمّ الدال، ومدّ صلة صغرى للهاء وصلاً وإسكانها وقفاً.",
+    46 to "كسر الحاء، وهمس الفاء الساكنة ورخاوتها دون قلقلة، وتفخيم الظاء المضمومة وإطباقها مع إخراج طرف اللسان، وضمّ الهاء، ومدّ الألف حركتين.",
+    47 to "فتح الواو، وضمّ الهاء، وفتح الواو الثانية دون مدّ وصلاً وإسكانها وقفاً.",
+    48 to "إظهار اللام القمرية، وفتح العين وكسر اللام، وتشديد الياء مع ضمّها وصلاً والنبر عليها بالسكون وقفاً.",
+    49 to "إظهار اللام القمرية، وفتح العين وترقيقها، وتفخيم الظاء المكسورة وإطباقها مع إخراج اللسان، ومدّ عارض للسكون (٢ أو ٤ أو ٦ حركات) مع إسكان الميم وقفاً."
 )
 
-// توحيد الكتابة: حذف التشكيل والمدّ، توحيد أشكال الألف والياء والتاء المربوطة، وحذف الهمزات المنفردة
-fun norm(s: String): String {
+// تطبيع الكلمة المفردة مع الحفاظ على بنية الحروف والهمزات بدقة، وتوحيد الرسم العثماني والإملائي الصحيح فقط
+fun normRawWord(s: String): String {
     val sb = StringBuilder()
     for (ch in s) {
         val c = ch.code
         if (c in 0x064B..0x065F || c == 0x0670 || c == 0x0640 || c in 0x06D6..0x06ED) continue
         when (ch) {
             'أ', 'إ', 'آ', 'ٱ' -> sb.append('ا')
-            'ى', 'ی' -> sb.append('ي')
+            'ى', 'ی', 'ئ' -> sb.append('ي')
+            'ؤ' -> sb.append('و')
             'ة' -> sb.append('ه')
             'ک' -> sb.append('ك')
-            'ء', 'ؤ', 'ئ' -> { }
+            'ء' -> { }
             else -> if (c in 0x0621..0x064A) sb.append(ch)
         }
     }
-    return sb.toString()
+    return when (val res = sb.toString()) {
+        "السموات" -> "السماوات"
+        "الاه" -> "اله"
+        "يووده", "ييوده", "ياوده" -> "يوده"
+        "سنت" -> "سنه"
+        else -> res
+    }
+}
+
+fun norm(s: String): String {
+    val tokens = s.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    if (tokens.isEmpty()) return normRawWord(s)
+    val joined = tokens.joinToString("") { normRawWord(it) }
+    return joined
+        .replace("السموات", "السماوات")
+        .replace("سنتولا", "سنهولا")
+        .replace("يووده", "يوده")
+        .replace("ييوده", "يوده")
 }
 
 val NW: List<String> = WORDS.map { norm(it) }
@@ -130,45 +172,167 @@ val OWNER: IntArray = IntArray(REF.length).also { arr ->
 }
 val IS_START: BooleanArray = BooleanArray(REF.length + 1).also { arr -> for (s in W_START) arr[s] = true }
 
+/**
+ * استخراج بصمة الحركات (التشكيل) إن وُجدت في مخرجات المعرِّف الصوتي،
+ * لرصد أخطاء التشكيل فورياً حتى في الوضع المحلي متى ما أعاد المعرِّفُ الحركات.
+ */
+object TashkeelAndMakhrajChecker {
+    private fun extractHarakat(wordWithDiacritics: String): List<Pair<Char, String>> {
+        val out = ArrayList<Pair<Char, String>>()
+        var curCons: Char? = null
+        var curVowel: String? = null
+        for (ch in wordWithDiacritics) {
+            val v = when (ch) {
+                'َ', 'ً' -> "الفتحة"
+                'ُ', 'ٌ' -> "الضمة"
+                'ِ', 'ٍ' -> "الكسرة"
+                'ْ' -> "السكون"
+                else -> null
+            }
+            if (v != null) {
+                curVowel = v
+            } else {
+                val c = ch.code
+                if (c in 0x064B..0x065F || c == 0x0670 || c == 0x0640 || c in 0x06D6..0x06ED) continue
+                if (curCons != null && curVowel != null) {
+                    val nc = normRawWord(curCons.toString()).firstOrNull() ?: curCons
+                    out.add(Pair(nc, curVowel))
+                }
+                curCons = ch
+                curVowel = null
+            }
+        }
+        if (curCons != null && curVowel != null) {
+            val nc = normRawWord(curCons.toString()).firstOrNull() ?: curCons
+            out.add(Pair(nc, curVowel))
+        }
+        return out
+    }
+
+    fun checkDiacriticConflict(rawHeardWord: String, wordIdx: Int): String? {
+        if (wordIdx !in WORDS.indices) return null
+        val heardSig = extractHarakat(rawHeardWord)
+        if (heardSig.isEmpty()) return null
+        val refSig = extractHarakat(WORDS[wordIdx])
+        if (refSig.isEmpty()) return null
+        val m = minOf(heardSig.size, refSig.size)
+        for (k in 0 until m) {
+            val (hc, hv) = heardSig[k]
+            val (rc, rv) = refSig[k]
+            if (hc == rc && hv != rv) {
+                if (k == refSig.size - 1 && hv == "السكون") continue // الوقف بالسكون جائز
+                return "خطأ في التشكيل: نطقت «$hv» على حرف «$hc» والصواب «$rv» في كلمة «${WORDS[wordIdx]}»."
+            }
+        }
+        return null
+    }
+
+    /** تشخيص تفصيلي لنوع الخطأ بين الكلمة المتوقعة والكلمة المسموعة (مخرج، صفة، مد، نقص أو زيادة). */
+    fun diagnoseOrthographicError(wordIdx: Int, expectedNorm: String, heardNorm: String): String {
+        if (heardNorm.isEmpty()) {
+            return "لم أسمع هذه الكلمة منك (قد تكون تخطيتَها أثناء التسميع)."
+        }
+        val msgs = LinkedHashSet<String>()
+        val makhrajHints = mapOf(
+            Pair('ذ', 'ز') to "إبدال الذال زاياً — احرص على إخراج طرف اللسان في الذال",
+            Pair('ذ', 'د') to "إبدال الذال دالاً — احرص على إخراج طرف اللسان ورخاوة الذال",
+            Pair('ظ', 'ز') to "إبدال الظاء زاياً — احرص على تفخيم الظاء وإطباقها وإخراج طرف اللسان",
+            Pair('ظ', 'ذ') to "ترقيق الظاء فتخرج ذالاً — احرص على تفخيم الظاء وإطباقها",
+            Pair('ظ', 'ض') to "خلط مخرج الظاء بالضاد — الظاء يخرج فيها طرف اللسان",
+            Pair('ض', 'د') to "إبدال الضاد دالاً — احرص على تفخيم الضاد وإطباقها واستطالتها",
+            Pair('ض', 'ز') to "إبدال الضاد زاياً — الضاد تخرج من حافتي اللسان مع الأضراس العليا",
+            Pair('ض', 'ظ') to "إبدال الضاد ظاءً — لا تُخرج طرف اللسان في الضاد",
+            Pair('ش', 'س') to "إبدال الشين سيناً — احرص على صفة التفشّي في الشين من وسط اللسان",
+            Pair('س', 'ص') to "تفخيم السين فتخرج صاداً — السين حرف مستفل مرقّق",
+            Pair('ص', 'س') to "ترقيق الصاد فتخرج سيناً — الصاد حرف مستعلٍ مطبق مفخّم",
+            Pair('ط', 'ت') to "ترقيق الطاء فتخرج تاءً — احرص على تفخيم الطاء وإطباقها وترك الهمس",
+            Pair('ت', 'ط') to "تفخيم التاء فتخرج طاءً — التاء حرف مرقّق مهموس",
+            Pair('ق', 'ك') to "إبدال القاف كافاً — القاف مفخّمة من أقصى اللسان مع الحنك اللحمي",
+            Pair('ح', 'ه') to "إبدال الحاء هاءً — الحاء من وسط الحلق والهاء من أقصاه",
+            Pair('ع', 'ا') to "إبدال العين همزةً — حقّق مخرج العين من وسط الحلق",
+            Pair('خ', 'غ') to "خلط الخاء بالغين — الخاء مهموسة والغين مجهورة"
+        )
+
+        if (expectedNorm.length == heardNorm.length) {
+            for (k in expectedNorm.indices) {
+                val ec = expectedNorm[k]
+                val hc = heardNorm[k]
+                if (ec != hc) {
+                    val hint = makhrajHints[Pair(ec, hc)]
+                    if (hint != null) {
+                        msgs.add("خطأ في مخرج/صفة الحرف: $hint (نطقت «$hc» بدلاً من «$ec»).")
+                    } else {
+                        msgs.add("خطأ في نطق الحرف: نطقت «$hc» بدلاً من «$ec».")
+                    }
+                }
+            }
+        } else if (heardNorm.length < expectedNorm.length) {
+            val missingChars = expectedNorm.toMutableList()
+            for (c in heardNorm) missingChars.remove(c)
+            for (mc in missingChars) {
+                if (mc in listOf('ا', 'و', 'ي')) {
+                    msgs.add("خطأ في التجويد (المدّ) أو بنية الكلمة: إسقاط أو قصر حرف المدّ «$mc».")
+                } else {
+                    msgs.add("خطأ في الحروف: إسقاط حرف «$mc» من الكلمة.")
+                }
+            }
+        } else {
+            val extraChars = heardNorm.toMutableList()
+            for (c in expectedNorm) extraChars.remove(c)
+            for (xc in extraChars) {
+                msgs.add("خطأ في الحروف: زيادة حرف «$xc» غير موجود في الكلمة.")
+            }
+        }
+
+        val sb = StringBuilder()
+        if (msgs.isNotEmpty()) {
+            sb.append(msgs.joinToString("\n• ", prefix = "• ")).append("\n\n")
+        }
+        sb.append("سمعتُ منك: «").append(heardNorm).append("»\nوالصواب: ").append(WORDS[wordIdx])
+        return sb.toString()
+    }
+}
+
 class AlignResult(
     val st: Array<WS?>,        // OK / WRONG للكلمات المحسومة، و null لغير المحسومة
     val heard: Array<String>,  // ما سُمع فعلاً لكل كلمة (بحروف مجرّدة)
+    val notes: Array<String>,  // ملاحظات تشخيصية خاصة بالكلمة (تشكيل / مخرج)
     val last: Int,             // آخر كلمة وصلت إليها المطابقة
     val bad: Int,
     val score: Float
 )
 
 /**
- * مطابقة على مستوى الحروف بين ما سمعه المعرِّف وبين نص الآية:
- *  - لا تعتمد على ترتيب/عدد الكلمات التي يُرجعها المعرِّف (يصحّ مع الدمج والتقسيم).
- *  - الكلمة المتروكة تُكتشف وتُلوَّن بالأحمر.
- *  - الكلمة المستبدلة بأخرى تُلوَّن بالأحمر.
+ * محرك المطابقة الصارم على مستوى الحروف والكلمات (الإصدار الرابع):
+ *  - نسبة التسامح مع الحروف الخاطئة = صفر (allowed = 0f لجميع الكلمات بلا استثناء).
+ *  - يدعم نافذة رجوع (Lookback) حتى 4 كلمات سابقة لمنع تلوين الكلمة بالأحمر إذا أعاد القارئ كلمة بعد أخذ النَّفَس.
+ *  - يمنع التلوين الأحمر المبكر أثناء الفرضيات الجزئية غير المستقرة (onPartialResults).
+ *  - يستخرج الكلمة المسموعة فعلياً بدقة (بما في ذلك الحروف الزائدة أو المبدلة في آخر الكلمة).
  */
 object Aligner {
     private const val INF = 1e9f
-    private const val SKIP = 0.5f
+    private const val SKIP = 0.85f
+    private const val MATCH_BONUS = -0.04f
+    private const val SUB_COST = 0.98f
+    private const val GAP_COST = 1.00f
 
-    private fun allowed(len: Int, strict: Boolean): Float =
-        if (strict) {
-            if (len <= 2) 0f else if (len <= 4) 0.35f else if (len <= 7) 1.0f else 1.5f
-        } else {
-            if (len <= 2) 0.3f else if (len <= 4) 1.0f else if (len <= 7) 1.3f else 2.0f
-        }
-
-    private fun gap(c: Char): Float = if (c == 'ا') 0.3f else 1.0f
-
-    fun align(h: String, base: Int, isFinal: Boolean, strict: Boolean): AlignResult? {
+    fun align(rawText: String, base: Int, isFinal: Boolean, strict: Boolean): AlignResult? {
+        val h = norm(rawText)
         val m = h.length
         if (m == 0) return null
         val n = WORDS.size
-        val s0 = W_START[base]
+        val lookbackBase = maxOf(0, base - 4)
+        val s0 = W_START[lookbackBase]
         val rl = REF.length - s0
         val w = rl + 1
         val d = FloatArray((m + 1) * w) { INF }
         val bp = ByteArray((m + 1) * w)
 
-        d[0] = 0f
-        for (j in 1..rl) if (IS_START[s0 + j]) d[j] = SKIP * j
+        val baseOffset = W_START[base] - s0
+        for (wi in lookbackBase until minOf(n, base + 4)) {
+            val jStart = W_START[wi] - s0
+            d[jStart] = if (wi <= base) (base - wi) * 0.02f else SKIP * (jStart - baseOffset)
+        }
 
         for (i in 1..m) {
             val hi = h[i - 1]
@@ -180,19 +344,19 @@ object Aligner {
                 if (j > 0) {
                     val v0 = d[prev + j - 1]
                     if (v0 < INF) {
-                        val v = v0 + (if (hi == REF[s0 + j - 1]) 0f else 1f)
+                        val v = v0 + (if (hi == REF[s0 + j - 1]) MATCH_BONUS else SUB_COST)
                         if (v < best) { best = v; b = 1 }
                     }
                 }
                 val v1 = d[prev + j]
                 if (v1 < INF) {
-                    val v = v1 + gap(hi)
+                    val v = v1 + GAP_COST
                     if (v < best) { best = v; b = 2 }
                 }
                 if (j > 0) {
                     val v2 = d[row + j - 1]
                     if (v2 < INF) {
-                        val v = v2 + gap(REF[s0 + j - 1])
+                        val v = v2 + GAP_COST
                         if (v < best) { best = v; b = 3 }
                     }
                     val c = s0 + j - 1
@@ -217,15 +381,13 @@ object Aligner {
         var bc = INF
         for (j in 0..rl) {
             val v = d[m * w + j]
-            if (v < bc - 1e-6f) { bc = v; je = j }
+            if (v <= bc + 1e-6f) { bc = v; je = j }
         }
         if (bc >= INF) return null
 
         val cost = FloatArray(n)
         val heardRev = Array(n) { StringBuilder() }
         val skipped = BooleanArray(n)
-        val insJ = ArrayList<Int>()
-        val insC = ArrayList<Char>()
         var i = m
         var j = je
         var matched = 0
@@ -240,10 +402,16 @@ object Aligner {
                     heardRev[wi].append(h[i - 1])
                     i--; j--
                 }
-                2 -> { insJ.add(j); insC.add(h[i - 1]); i-- }
+                2 -> {
+                    val col = (s0 + j - 1).coerceIn(s0, REF.length - 1)
+                    val wi = OWNER[col]
+                    cost[wi] += 1f
+                    heardRev[wi].append(h[i - 1])
+                    i--
+                }
                 3 -> {
                     val col = s0 + j - 1
-                    cost[OWNER[col]] += gap(REF[col])
+                    cost[OWNER[col]] += 1f
                     j--
                 }
                 else -> {
@@ -255,52 +423,60 @@ object Aligner {
         }
         val startCol = s0 + j
         val endCol = s0 + je
-        // تجاهل الضوضاء: لازم يتطابق نصف ما سُمع على الأقل
         if (endCol <= startCol || matched == 0 || matched * 2 < m) return null
-
-        // الحروف الزائدة داخل الكلمة تُحتسب خطأً
-        val penIn = if (strict) 1f else 0.5f
-        val groups = HashMap<Int, StringBuilder>()
-        for (k in insJ.indices) groups.getOrPut(insJ[k]) { StringBuilder() }.append(insC[k])
-        for ((jj, chs) in groups) {
-            if (jj <= 0) continue
-            val left = s0 + jj - 1
-            val lw = OWNER[left]
-            if (s0 + jj < REF.length && OWNER[s0 + jj] == lw && left + 1 < W_END[lw]) {
-                var sum = 0f
-                for (c in chs) sum += gap(c)
-                cost[lw] += penIn * sum
-            } else if (strict && chs.length == 1 && chs[0] != 'ا' && NW[lw].length >= 4) {
-                cost[lw] += 1f
-            }
-        }
 
         val st = arrayOfNulls<WS>(n)
         val heard = Array(n) { "" }
+        val notes = Array(n) { "" }
         val first = OWNER[startCol]
         val last = OWNER[endCol - 1]
-        for (wi in base until first) st[wi] = WS.WRONG
-        for (wi in first..last) {
+
+        // إذا تخطى القارئ كلمات في بداية الجلسة، لا نوسمها بالخطأ إلا عند الحسم النهائي أو بعد تأكيد كلمتين بعدها
+        if (first > base && (isFinal || (last - first >= 1))) {
+            for (wi in base until first) st[wi] = WS.WRONG
+        }
+
+        // فحص الحركات (التشكيل) في النص الخام إن وُجدت
+        val rawTokens = rawText.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+
+        val evalStart = maxOf(base, first)
+        for (wi in evalStart..last) {
             heard[wi] = heardRev[wi].reverse().toString()
-            if (skipped[wi]) { st[wi] = WS.WRONG; continue }
-            val a = allowed(NW[wi].length, strict)
-            if (wi < last) {
-                st[wi] = if (cost[wi] <= a + 1e-4f) WS.OK else WS.WRONG
-            } else if (endCol >= W_END[wi]) {
-                if (cost[wi] <= a + 1e-4f) st[wi] = WS.OK
-                else if (isFinal) st[wi] = WS.WRONG
-            } else {
-                val missing = W_END[wi] - endCol
-                if (cost[wi] > a + 1e-4f) {
-                    if (isFinal) st[wi] = WS.WRONG
-                } else if (isFinal && missing <= 1) {
-                    st[wi] = WS.OK
+            if (skipped[wi]) {
+                if (isFinal || (last - wi >= 2)) st[wi] = WS.WRONG
+                continue
+            }
+            // فحص تعارض التشكيل في التوكن المقابل إن أعاد المعرِّف حركات
+            val relIdx = wi - first
+            if (relIdx in rawTokens.indices) {
+                val tConflict = TashkeelAndMakhrajChecker.checkDiacriticConflict(rawTokens[relIdx], wi)
+                if (tConflict != null) {
+                    cost[wi] += 1f
+                    notes[wi] = tConflict
                 }
+            }
+
+            // صرامة تامة (allowed = 0f): لا يُتسامح مع أي حرف مبدَّل أو ناقص أو زائد في أي كلمة
+            if (wi < last) {
+                if (cost[wi] <= 1e-4f) {
+                    st[wi] = WS.OK
+                } else if (isFinal || (last - wi >= 2)) {
+                    st[wi] = WS.WRONG
+                }
+            } else if (endCol >= W_END[wi]) {
+                if (cost[wi] <= 1e-4f) {
+                    st[wi] = WS.OK
+                } else if (isFinal) {
+                    st[wi] = WS.WRONG
+                }
+            } else {
+                // الكلمة الأخيرة لم تكتمل حروفها بعد: عند الحسم النهائي (isFinal) تُعدّ ناقصة/خاطئة
+                if (isFinal) st[wi] = WS.WRONG
             }
         }
         var bad = 0
         for (wi in base until n) if (st[wi] == WS.WRONG) bad++
-        return AlignResult(st, heard, last, bad, matched.toFloat() - bc)
+        return AlignResult(st, heard, notes, last, bad, matched.toFloat() - bc)
     }
 }
 
@@ -315,7 +491,7 @@ class Engine(private val ctx: Context) {
     val states = mutableStateListOf<WS>().apply { repeat(WORDS.size) { add(WS.PENDING) } }
     val heard = Array(WORDS.size) { "" }
 
-    // ===== الوضع الدقيق: صوت خام ← خادم يحلّل الفونيمات (حروف + تشكيل + تجويد) =====
+    // ===== الوضع الدقيق: صوت خام ← خادم يحلّل الفونيمات وصفات الحروف (حروف + تشكيل + تجويد) =====
     val notes = Array(WORDS.size) { "" }
     var serverUrl by mutableStateOf(
         ctx.getSharedPreferences("rafiq", Context.MODE_PRIVATE).getString("server", "") ?: ""
@@ -395,10 +571,8 @@ class Engine(private val ctx: Context) {
             sb.append(notes[i])
         } else if (states[i] == WS.HINT) {
             sb.append("نسيتَ هذه الكلمة فلُقِّنتَها. أعد حفظ موضعها جيداً.")
-        } else if (heard[i].isEmpty()) {
-            sb.append("لم أسمع هذه الكلمة منك (قد تكون تركتَها، أو لم يلتقطها الميكروفون).")
         } else {
-            sb.append("سمعتُ منك: «").append(heard[i]).append("»\nوالصواب: ").append(WORDS[i])
+            sb.append(TashkeelAndMakhrajChecker.diagnoseOrthographicError(i, NW[i], heard[i]))
         }
         TIPS[i]?.let { sb.append("\n\nتذكير بحكم الكلمة: ").append(it) }
         return sb.toString()
@@ -445,7 +619,7 @@ class Engine(private val ctx: Context) {
                 lastR?.let { commit(it) }
                 if (id != session) return
                 if (e == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) { status = "صلاحية الميكروفون غير ممنوحة"; return }
-                val wait = if (e == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || e == SpeechRecognizer.ERROR_CLIENT) 500L else 120L
+                val wait = if (e == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || e == SpeechRecognizer.ERROR_CLIENT) 400L else 80L
                 restart(id, wait)
             }
             override fun onResults(b: Bundle?) {
@@ -465,10 +639,9 @@ class Engine(private val ctx: Context) {
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName)
-            // جلسات أطول وصبر أكثر على التوقف بين الكلمات (قد لا تلتزم بها بعض الأجهزة)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3500L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 20000L)
         })
     }
 
@@ -488,14 +661,9 @@ class Engine(private val ctx: Context) {
     private fun onHyp(raw: List<String>, isFinal: Boolean) {
         if (phase != Phase.GUIDED && phase != Phase.RECITE) return
         val strict = phase == Phase.RECITE
-        // التسميع: أول فرضية فقط (صارم). القراءة الموجَّهة: أفضل فرضية بين البدائل (متسامح مع أخطاء التعرف).
-        val pool = if (strict) raw.take(1) else raw
-        var best: AlignResult? = null
-        for (c in pool) {
-            val r = Aligner.align(norm(c), sBase, isFinal, strict) ?: continue
-            if (best == null || r.score > best.score) best = r
-        }
-        val r = best
+        // نعتمد الفرضية الصوتية الأولى (الأقرب لما نطقه المستخدم فعلاً) حتى لا يخفي النموذج اللغوي أخطاء النطق
+        val primary = Aligner.align(raw[0], sBase, isFinal, strict)
+        val r = primary ?: raw.drop(1).firstNotNullOfOrNull { Aligner.align(it, sBase, isFinal, strict) }
         if (r == null) {
             if (isFinal) lastR?.let { commit(it) }
             return
@@ -506,7 +674,10 @@ class Engine(private val ctx: Context) {
             val s = r.st[i]
             if (s == WS.WRONG && !beeped[i] && phase == Phase.RECITE) { beeped[i] = true; beep = true }
             states[i] = s ?: WS.PENDING
-            if (s != null) heard[i] = r.heard[i]
+            if (s != null) {
+                heard[i] = r.heard[i]
+                notes[i] = r.notes[i]
+            }
         }
         if (beep) { try { tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 180) } catch (e: Exception) { } }
         refreshCurrent()
@@ -514,7 +685,6 @@ class Engine(private val ctx: Context) {
             commit(r)
         } else {
             lastR = r
-            // وصلت للكلمة الأخيرة: أنهِ الجلسة ليصل الحكم النهائي بسرعة
             if (allDecided() && !stopping) { stopping = true; rec?.stopListening() }
         }
     }
@@ -545,8 +715,8 @@ class Engine(private val ctx: Context) {
             if (precise) {
                 status = "لم تُحتسب القراءة: $bad كلمة بها خطأ (بالأحمر). اضغط على الكلمة الحمراء لمعرفة الخطأ، ثم أعد التسجيل."
             } else {
-                status = "لم تُحتسب القراءة: $bad كلمة بها خطأ (بالأحمر). أعد القراءة من البداية."
-                again(3200L)
+                status = "لم تُحتسب القراءة: $bad كلمة بها خطأ (بالأحمر). اضغط على الكلمة الحمراء لمعرفة السبب، أو أعد القراءة."
+                again(3600L)
             }
         }
     }
@@ -642,7 +812,6 @@ class Engine(private val ctx: Context) {
 
 val Bg = Color(0xFF0F2B2A); val CardC = Color(0xFF173E3B); val Gold = Color(0xFFD4AF37)
 val Cream = Color(0xFFF5EBD0); val Red = Color(0xFFEF4444); val Green = Color(0xFF4ADE80); val Orange = Color(0xFFFFA94D)
-// لاستخدام خط Cairo: ضع Cairo-Regular.ttf في res/font ثم استبدل بـ FontFamily(Font(R.font.cairo_regular))
 val Cairo: FontFamily = FontFamily.Serif
 
 class MainActivity : ComponentActivity() {
@@ -695,7 +864,7 @@ fun VerseCard(e: Engine, result: Boolean, onWord: (Int) -> Unit) {
                         val glow = if (isCur) {
                             Modifier.background(Gold.copy(alpha = 0.12f + 0.25f * a), RoundedCornerShape(12.dp))
                         } else Modifier
-                        val tap = if ((result || e.precise) && (s == WS.WRONG || s == WS.HINT)) {
+                        val tap = if (s == WS.WRONG || s == WS.HINT) {
                             Modifier.clickable { onWord(i) }
                         } else Modifier
                         Box(
@@ -772,8 +941,8 @@ fun App() {
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (e.precise) "الوضع: فحص دقيق للحروف والتشكيل والتجويد (على مستوى الفونيمات)"
-                    else "الوضع: تقريبي — لا يلتقط التشكيل ولا التجويد ولا الحروف المتقاربة. أدخل عنوان الخادم للفحص الدقيق.",
+                    if (e.precise) "الوضع: فحص دقيق للحروف والتشكيل والتجويد وصفات الحروف والوقف والابتداء"
+                    else "الوضع: فحص نصي صارم للحروف — لرصد التشكيل وأحكام التجويد الدقيقة أدخل عنوان خادم الفحص الدقيق.",
                     color = if (e.precise) Green else Orange,
                     fontSize = 13.sp,
                     textAlign = TextAlign.Center
@@ -782,7 +951,7 @@ fun App() {
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Switch(checked = e.lenientMadd, onCheckedChange = { e.lenientMadd = it })
-                        Text("قبول الأطوال المعتبرة للمدود الفرعية (منفصل ٢–٥، متصل ٤–٦)", color = Cream, fontSize = 13.sp)
+                        Text("قبول الأطوال المعتبرة للمدود الفرعية في حفص (منفصل ٢–٥، متصل ٤–٦، عارض ٢–٦)", color = Cream, fontSize = 13.sp)
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -863,7 +1032,7 @@ fun App() {
         if (e.precise && e.phase == Phase.RESULT) {
             Spacer(Modifier.height(14.dp))
             Text(
-                "الفحص آلي وقد يخطئ (يفوته بعض الأخطاء وقد ينبّه خطأً)، ولا يغني عن معلّم مُجاز.",
+                "الفحص آلي وقد يخطئ نادراً، ولا يغني عن العرض على معلّم مُجاز.",
                 color = Cream.copy(alpha = 0.6f), fontSize = 12.sp, textAlign = TextAlign.Center
             )
             if (e.lastRaw.isNotEmpty()) {
@@ -879,7 +1048,7 @@ fun App() {
         AlertDialog(
             onDismissRequest = { dialog = null },
             confirmButton = { TextButton(onClick = { dialog = null }) { Text("حسناً") } },
-            title = { Text("تنبيه") },
+            title = { Text("تفصيل الخطأ والحكم التجويدي") },
             text = { Box(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) { Text(it) } }
         )
     }

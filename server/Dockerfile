@@ -7,9 +7,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg libsndfile1 \
  && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir "quran-muaalem[engine]"
+RUN pip install --no-cache-dir "quran-muaalem[engine]" fastapi uvicorn python-multipart librosa
 WORKDIR /app
-COPY patch_settings.py start.sh /app/
+COPY app_server.py patch_settings.py start.sh /app/
 RUN chmod +x /app/start.sh
 EXPOSE 8001
 CMD ["/app/start.sh"]
