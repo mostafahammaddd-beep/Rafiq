@@ -1,0 +1,10 @@
+modal>=0.68.0
+quran-muaalem[engine]>=0.2.2
+quran-transcript
+librosa
+torch
+fastapi[standard]
+websockets
+numba>=0.61.2
+soundfile
+numpy
