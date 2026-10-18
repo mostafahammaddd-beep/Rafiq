@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.os.Build
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.ToneGenerator
@@ -451,6 +453,10 @@ object TashkeelAndMakhrajChecker {
             "فيما" to "خطأ في الكلمة: نطقتَ «فيما» بدلاً من «بِمَا»."
         ),
         39 to mapOf(
+            "شا" to "خطأ في التجويد (المد الواجب المتصل) أو الهمزة: قصرتَ مدّ «شَاءَ» أو أسقطتَ همزته، والواجب مدّها ٤–٥ حركات مع تحقيق الهمزة.",
+            "شأ" to "خطأ في التجويد (المد الواجب المتصل): قصرتَ مدّ «شَاءَ» عن مقداره الواجب (٤–٥ حركات).",
+            "شاءو" to "خطأ في التشكيل (الإعراب): ضممتَ همزة «شَاءَ» والصواب فتحها وصلاً أو إسكانها وقفاً.",
+            "شاؤوا" to "خطأ في التشكيل والكلمة: نطقتَ «شاؤوا» والصواب المفرد المفتوح «شَاءَ».",
             "شاءُ" to "خطأ في التشكيل (الإعراب): ضممتَ همزة «شَاءَ» والصواب فتحها وصلاً أو إسكانها وقفاً.",
             "شاءِ" to "خطأ في التشكيل (الإعراب): كسرتَ همزة «شَاءَ» والصواب فتحها وصلاً أو إسكانها وقفاً.",
             "شائ" to "خطأ في التشكيل (الإعراب): كسرتَ همزة «شَاءَ» والصواب فتحها وصلاً أو إسكانها وقفاً.",
@@ -773,7 +779,7 @@ object Aligner {
     private const val INF = 1e9f
     private const val SKIP = 0.85f
     private const val MATCH_BONUS = -0.04f
-    private const val SUB_COST = 0.98f
+    private const val SUB_COST = 0.72f
     private const val GAP_COST = 0.95f
 
     fun align(rawText: String, base: Int, isFinal: Boolean): AlignResult? {
@@ -1001,6 +1007,8 @@ class Engine(private val ctx: Context) {
     private val lockedWrongNotes = Array(WORDS.size) { "" }
     private val lockedWrongHeard = Array(WORDS.size) { "" }
     private val lastWordWrongStreak = IntArray(WORDS.size)
+    private var auditedUpToWord = 0
+    private var pendingTailAuditWord = -1
 
     private val h = Handler(Looper.getMainLooper())
     private var rec: SpeechRecognizer? = null
@@ -1032,10 +1040,12 @@ class Engine(private val ctx: Context) {
         }
         base = 0
         sBase = 0
+        auditedUpToWord = 0
+        pendingTailAuditWord = -1
         lastR = null
         current = 0
         lastActivity = SystemClock.elapsedRealtime()
-        RmsProsodyMonitor.reset()
+        AcousticStreamAuditor.resetSession()
     }
 
     fun goGuided() {
@@ -1062,7 +1072,7 @@ class Engine(private val ctx: Context) {
     }
 
     fun finish() {
-        stopRec(); h.removeCallbacksAndMessages(null)
+        stopRec(); AcousticStreamAuditor.stopAll(); h.removeCallbacksAndMessages(null)
         for (i in states.indices) if (states[i] == WS.PENDING) states[i] = WS.WRONG
         current = WORDS.size
         phase = Phase.RESULT
@@ -1121,15 +1131,20 @@ class Engine(private val ctx: Context) {
         rec = r
         r.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(p: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
+            override fun onBeginningOfSpeech() {
+                AcousticStreamAuditor.notifyRecognizerAlive()
+            }
             override fun onRmsChanged(v: Float) {
-                RmsProsodyMonitor.onRmsChanged(v, current)
+                AcousticStreamAuditor.onRmsChanged(v)
             }
             override fun onBufferReceived(b: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onEvent(t: Int, b: Bundle?) {}
             override fun onError(e: Int) {
                 if (id != session) return
+                if (e == SpeechRecognizer.ERROR_AUDIO) {
+                    AcousticStreamAuditor.notifyRecognizerAudioError()
+                }
                 lastR?.let { commit(it) }
                 if (id != session) return
                 if (e == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
@@ -1141,16 +1156,32 @@ class Engine(private val ctx: Context) {
             }
             override fun onResults(b: Bundle?) {
                 if (id != session) return
+                AcousticStreamAuditor.notifyRecognizerAlive()
                 val c = candidates(b)
                 if (c != null) onHyp(c, true) else lastR?.let { commit(it) }
                 restart(id, 0L)
             }
             override fun onPartialResults(b: Bundle?) {
                 if (id != session) return
+                AcousticStreamAuditor.notifyRecognizerAlive()
                 candidates(b)?.let { onHyp(it, false) }
             }
+            override fun onSegmentResults(segmentResults: Bundle) {
+                if (id != session) return
+                AcousticStreamAuditor.notifyRecognizerAlive()
+                candidates(segmentResults)?.let { onHyp(it, false) }
+            }
+            override fun onEndOfSegmentedSession() {
+                if (id != session) return
+                lastR?.let { commit(it) }
+                restart(id, 0L)
+            }
         })
-        // إعدادات SpeechRecognizer الأصلية المجرَّبة التي تضمن تحرك التوهج بسلاسة تامة وبدون انقطاع
+        val pipePfd = if (Build.VERSION.SDK_INT >= 33 && AcousticStreamAuditor.shouldUseAudioSourcePipe()) {
+            AcousticStreamAuditor.openPipeForSpeechRecognizer {
+                if (id == session) restart(id, 0L)
+            }
+        } else null
         r.startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar-SA")
@@ -1160,6 +1191,12 @@ class Engine(private val ctx: Context) {
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4500L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3500L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 20000L)
+            if (Build.VERSION.SDK_INT >= 33 && pipePfd != null) {
+                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, pipePfd)
+                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
+                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, 16000)
+            }
         })
     }
 
@@ -1243,35 +1280,45 @@ class Engine(private val ctx: Context) {
             }
         }
 
-        // 2. فحص أزمنة المد الواجب المتصل والغنة عبر RmsProsodyMonitor (بدون AudioRecord) للكلمات المكتملة
-        for (wi in maxOf(sBase, r.first) until r.last) {
-            if (wi in sBase until WORDS.size && lockedWrongNotes[wi].isEmpty()) {
-                val timingErr = RmsProsodyMonitor.checkCompletedWordTajweedTiming(wi, isWaqf = false)
-                if (timingErr != null) {
-                    lockedWrongNotes[wi] = timingErr
+        // 2. فحص التشكيل والتجويد اللحظي:
+        //    أ) الكلمات التي انتقل القارئ لما بعدها (wi < r.last) اكتمل نطقها 100% فنفحصها فوراً مع قص وادي الطاقة قبل الكلمة الجديدة
+        //    ب) الكلمة الحالية (r.last) عند اكتمال حروفها نلتقط حركتها الأخيرة ونفحصها فور انتهاء نطق آخرها (380ms) حتى لا نفحصها قبل نطق حركتها!
+        val immediateAuditEnd = if (isFinal) min(WORDS.size, r.last + 1) else min(WORDS.size, r.last)
+        val auditStart = maxOf(sBase, maxOf(r.first, auditedUpToWord))
+        if (immediateAuditEnd > auditStart) {
+            val acousticErrs = AcousticStreamAuditor.auditCompletedWordsRange(
+                wStart = auditStart,
+                wEndExclusive = immediateAuditEnd,
+                nextWordAlreadyStarted = !isFinal,
+                isFinal = isFinal
+            )
+            for ((wi, errMsg) in acousticErrs) {
+                if (wi in sBase until WORDS.size && lockedWrongNotes[wi].isEmpty()) {
+                    lockedWrongNotes[wi] = errMsg
                     if (lockedWrongHeard[wi].isEmpty()) lockedWrongHeard[wi] = r.heard[wi]
                 }
             }
+            auditedUpToWord = immediateAuditEnd
+        }
+        if (!isFinal && r.last in sBase until WORDS.size && r.st[r.last] != null && auditedUpToWord <= r.last) {
+            AcousticStreamAuditor.onWordStemReached(r.last)
+            scheduleTailAuditForCurrentWord(r.last, r.heard[r.last])
         }
 
-        // 3. إذا نطق القارئ في الموضع الحالي (r.last) كلمة ليست بداية للكلمة الصحيحة (كلمة قريبة أو حرف مختلف)، نحسمها فوراً!
+        // 3. إذا نطق القارئ في الموضع الحالي (r.last) كلمة مكتملة الحروف أو غير مطابقة، نقفل الخطأ فوراً من أول إطار قبل أن يصححه نموذج اللغة في الكلمة التالية!
         val lastW = r.last
         if (lastW in sBase until WORDS.size && lockedWrongNotes[lastW].isEmpty()) {
             val hLast = r.heard[lastW]
+            val isFullLengthMismatch = hLast.length >= NW[lastW].length && hLast != NW[lastW]
             val isNotPrefix = hLast.length >= max(2, NW[lastW].length - 1) && !NW[lastW].startsWith(hLast)
             if (r.trapHit[lastW]) {
                 lockedWrongNotes[lastW] = r.notes[lastW]
                 lockedWrongHeard[lastW] = hLast
-            } else if (isNotPrefix && r.subOrInsCost[lastW] >= 1f) {
-                lastWordWrongStreak[lastW]++
-                if (lastWordWrongStreak[lastW] >= 2) {
-                    val diag = if (r.notes[lastW].isNotEmpty()) r.notes[lastW]
-                    else TashkeelAndMakhrajChecker.diagnoseOrthographicError(lastW, NW[lastW], hLast)
-                    lockedWrongNotes[lastW] = diag
-                    lockedWrongHeard[lastW] = hLast
-                }
-            } else {
-                lastWordWrongStreak[lastW] = 0
+            } else if ((isFullLengthMismatch || isNotPrefix) && r.subOrInsCost[lastW] >= 0.7f) {
+                val diag = if (r.notes[lastW].isNotEmpty()) r.notes[lastW]
+                else TashkeelAndMakhrajChecker.diagnoseOrthographicError(lastW, NW[lastW], hLast)
+                lockedWrongNotes[lastW] = diag
+                lockedWrongHeard[lastW] = hLast
             }
         }
 
@@ -1319,8 +1366,64 @@ class Engine(private val ctx: Context) {
             commit(r)
         } else {
             lastR = r
-            if (allDecided() && !stopping) { stopping = true; rec?.stopListening() }
+            if (allDecided() && !stopping) {
+                stopping = true
+                AcousticStreamAuditor.closeCurrentPipe()
+                rec?.stopListening()
+                val myId = session
+                h.postDelayed({
+                    if (myId == session && allDecided() && (phase == Phase.GUIDED || phase == Phase.RECITE)) {
+                        lastR?.let { commit(it) }
+                    }
+                }, 320L)
+            }
         }
+    }
+
+    private fun scheduleTailAuditForCurrentWord(targetW: Int, heardStr: String, postponeCount: Int = 0) {
+        if (postponeCount == 0) {
+            if (pendingTailAuditWord == targetW) return
+            pendingTailAuditWord = targetW
+        }
+        val myId = session
+        val delayMs = if (postponeCount > 0) 160L else if (targetW in setOf(1, 9, 19, 23, 34, 36, 39)) 480L else 360L
+        h.postDelayed({
+            if (myId != session || (phase != Phase.GUIDED && phase != Phase.RECITE)) return@postDelayed
+            if (auditedUpToWord > targetW) return@postDelayed
+            if (postponeCount < 3 && AcousticStreamAuditor.isCurrentlyVoicing()) {
+                scheduleTailAuditForCurrentWord(targetW, heardStr, postponeCount + 1)
+                return@postDelayed
+            }
+            val aStart = maxOf(sBase, auditedUpToWord)
+            val aEnd = min(WORDS.size, targetW + 1)
+            if (aEnd > aStart) {
+                val errs = AcousticStreamAuditor.auditCompletedWordsRange(
+                    wStart = aStart,
+                    wEndExclusive = aEnd,
+                    nextWordAlreadyStarted = false,
+                    isFinal = false
+                )
+                auditedUpToWord = aEnd
+                var beepNow = false
+                for ((wi, errMsg) in errs) {
+                    if (wi in sBase until WORDS.size && lockedWrongNotes[wi].isEmpty()) {
+                        lockedWrongNotes[wi] = errMsg
+                        if (lockedWrongHeard[wi].isEmpty()) lockedWrongHeard[wi] = heardStr
+                        states[wi] = WS.WRONG
+                        notes[wi] = errMsg
+                        if (heard[wi].isEmpty()) heard[wi] = heardStr
+                        if (!beeped[wi] && phase == Phase.RECITE) {
+                            beeped[wi] = true
+                            beepNow = true
+                        }
+                    }
+                }
+                if (beepNow) {
+                    try { tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 180) } catch (_: Exception) {}
+                }
+                refreshCurrent()
+            }
+        }, delayMs)
     }
 
     private fun commit(r: AlignResult) {
@@ -1333,7 +1436,7 @@ class Engine(private val ctx: Context) {
     }
 
     private fun attemptDone() {
-        stopRec()
+        stopRec(); AcousticStreamAuditor.stopAll()
         val bad = states.count { it == WS.WRONG }
         val my = session
         if (bad <= GUIDED_TOLERANCE) {
@@ -1379,8 +1482,8 @@ class Engine(private val ctx: Context) {
     }
 
     private fun stopAudio() { player?.release(); player = null; playing = false }
-    private fun stopRec() { session++; rec?.destroy(); rec = null }
-    fun release() { h.removeCallbacksAndMessages(null); stopRec(); stopAudio(); tone?.release() }
+    private fun stopRec() { session++; AcousticStreamAuditor.closeCurrentPipe(); rec?.destroy(); rec = null }
+    fun release() { h.removeCallbacksAndMessages(null); stopRec(); AcousticStreamAuditor.stopAll(); stopAudio(); tone?.release() }
 }
 
 val Bg = Color(0xFF0F2B2A); val CardC = Color(0xFF173E3B); val Gold = Color(0xFFD4AF37)
